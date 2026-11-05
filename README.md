@@ -22,6 +22,10 @@ A squirrel in a pink dress, from Everly's front and back drawings, made in the s
 - **Walk her with the arrow keys** (or W A S D). Up walks away from you and left walks to the screen's left, whichever way you are looking. The camera follows her.
 - She swings her arms and feet as she walks, and her tail waves all the time.
 - She walks round furniture and through doorways but not through walls. The **Squirrel** button jumps to a view just behind her.
+- **Space** uses whatever is glowing next to her (its name shows in a label):
+  - picks things up: cushions, pillows, plushes, toys, cups and plates, the kettle, cupcakes, clothes, chairs, plants and more. Small things are carried in front of her, big ones over her head. Space again puts it down in front of her, on a table if there is one there.
+  - opens and shuts the doors, windows (the curtains blow when one is open), wardrobes and the pink fridge (with food inside to take out), and switches the lamps and the TV on and off.
+- **Feelings**: she is happy when she picks something up or switches something on, sad when she puts down a plush or the TV goes off, cross if she keeps walking into things, bored if left alone, and then sleepy. The feeling buttons (or keys 1 to 5) set one directly.
 
 ## Things to try
 

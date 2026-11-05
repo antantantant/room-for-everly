@@ -18,6 +18,10 @@
   #begin { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5,6,10,.35); }
   #begin button { font-size: 16px; padding: 12px 24px; background: rgba(214,112,150,.9); }
   #begin small { display: block; margin-top: 4px; font-size: 12px; opacity: .7; }
+  #feelings { margin-top: 6px; font-size: 13px; }
+  #feelings span { opacity: .7; margin-right: 6px; }
+  #hint { position: fixed; transform: translate(-50%, -100%); padding: 4px 10px; border-radius: 999px; font-size: 13px; white-space: nowrap; pointer-events: none;
+          color: #5a2a3c; background: rgba(255, 246, 214, .92); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 </style>
 <script type="importmap">
 { "imports": {
@@ -29,9 +33,11 @@
 <body>
 <div id="label">
   <h1>Room for Everly</h1>
-  <p>Arrow keys walk the squirrel · drag to rotate · scroll to zoom · click a lamp to switch it on</p>
+  <p>Arrow keys walk the squirrel · Space picks up, puts down, opens and switches · drag to rotate · scroll to zoom</p>
   <button data-view="overview">Overview</button><button data-view="living">Living room</button><button data-view="bedroom">Bedroom</button><button data-view="bathroom">Bathroom</button><button data-view="kids">Kids' room</button><button data-view="plan">Floor plan</button><button data-view="squirrel">Squirrel</button>
+  <div id="feelings"><span>Feelings (1–5)</span><button data-feel="happy">😊 Happy</button><button data-feel="sad">😢 Sad</button><button data-feel="angry">😠 Angry</button><button data-feel="bored">😑 Bored</button><button data-feel="sleepy">😴 Sleepy</button></div>
 </div>
+<div id="hint" hidden></div>
 <div id="transport" hidden>
   <span id="clock"></span>
   <button id="play">Pause</button>
@@ -44,11 +50,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bump ?v= whenever src/ changes: it stops a browser pairing this page with an older cached module.
-import { createPipeline } from './src/pipeline.js?v=2';
-import { buildScene, views, SUNRISE } from './src/scene.js?v=2';
-import { createMusic } from './src/audio.js?v=2';
-import { createSquirrel } from './src/squirrel.js?v=2';
-import { createWalker } from './src/walk.js?v=2';
+import { createPipeline } from './src/pipeline.js?v=3';
+import { buildScene, views, SUNRISE } from './src/scene.js?v=3';
+import { createMusic } from './src/audio.js?v=3';
+import { createSquirrel } from './src/squirrel.js?v=3';
+import { createWalker } from './src/walk.js?v=3';
+import { createFeelings } from './src/feelings.js?v=3';
+import { createInteraction } from './src/interact.js?v=3';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);
@@ -62,6 +70,7 @@ const squirrel = createSquirrel();
 squirrel.group.position.set(6.9 - 4.7, 0.014, 12.15 - 6.8);
 squirrel.group.rotation.y = -0.93;
 scene.add(squirrel.group);
+pipeline.hideFromAO.push(...squirrel.parts.zzz.children);
 window.__squirrel = squirrel;
 
 const controls = new OrbitControls(camera, pipeline.renderer.domElement);
@@ -94,7 +103,24 @@ const walker = createWalker({
   squirrel, scene, renderer: pipeline.renderer, camera, controls,
   hidden: [...pipeline.hideFromAO, ...room.lamps.map(l => l.proxy)],
 });
-window.__walker = walker;   // console helper: __walker.isFree(x, z) says whether she fits there
+window.__walker = walker;
+
+// How she feels: the buttons (or keys 1 to 5) set a feeling; things that happen set others.
+const feelings = createFeelings(squirrel, mood => {
+  document.querySelectorAll('[data-feel]').forEach(b => b.setAttribute('aria-pressed', b.dataset.feel === mood));
+});
+document.querySelectorAll('[data-feel]').forEach(b => b.onclick = () => feelings.set(b.dataset.feel));
+addEventListener('keydown', e => {
+  const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code);
+  if (n >= 0 && !e.metaKey && !e.ctrlKey) feelings.set(['happy', 'sad', 'angry', 'bored', 'sleepy'][n]);
+});
+// Space: pick up, put down, open, shut, switch on and off
+const interaction = createInteraction({ room, squirrel, walker, scene, camera, pipeline, feelings, hint: document.getElementById('hint') });
+window.__room = room;
+window.__feelings = feelings;
+window.__interaction = interaction;
+// a button keeps the keyboard after a click, and Space would press it again: let go of it
+document.querySelectorAll('button').forEach(b => b.addEventListener('click', () => b.blur()));   // console helper: __walker.isFree(x, z) says whether she fits there
 
 // Behind the squirrel, looking the way she faces, so the up arrow walks her straight on.
 // If furniture or a wall is in the way there, swing round her until the view is clear.
@@ -173,15 +199,20 @@ pipeline.start(() => {
   last = now;
   // The squirrel is always a little alive (her tail waves), so every frame is drawn;
   // her shadow is redrawn every other frame.
-  walker.update(dt);
+  const step = walker.update(dt, { mood: feelings.mood, carry: interaction.carry });
+  feelings.update(dt, step);
+  // doors, wardrobes and the fridge glide open and shut; once one stops, her map is redrawn
+  if (room.update(dt).some(it => it.verbs[0] === 'open')) walker.refresh();
+  interaction.update(dt);
   controls.update();
   if (frame++ % 2) pipeline.renderer.shadowMap.needsUpdate = true;
+  breeze += dt;                                                    // curtains at an open window blow
+  const gust = room.setWind(breeze, Math.min(1, breeze / 8));      // the breeze picks up over the first few seconds
   pipeline.invalidate();
-  if (!playing) return;                       // paused: nothing moves, so the pipeline goes back to idling
+  if (!playing) return;                       // paused: the sun stands still
   minutes = Math.min(SUNRISE.end, minutes + dt * speed / 60);
-  breeze += dt;
   applySun();
-  music.setGust(room.setWind(breeze, Math.min(1, breeze / 8)));   // the breeze picks up over the first few seconds
+  music.setGust(gust);
   refreshLight();
   pipeline.invalidate();
 });

@@ -51,13 +51,14 @@ function floorMap(scene, renderer, hidden) {
   scene.background = null;
   renderer.setRenderTarget(target);
   renderer.setClearColor(0xff0000, 1);      // nothing there (no floor) reads as blocked
-  const blocked = new Uint8Array(W * D), px = new Uint8Array(W * D * 4);
+  const blocked = new Uint8Array(W * D), top = new Uint8Array(W * D), px = new Uint8Array(W * D * 4);
   for (const [sx, sz] of [[0, 0], [0.1, 0], [-0.1, 0], [0, 0.1], [0, -0.1]]) {
     height.uniforms.uSlant.value.set(sx, sz);
     renderer.clear();
     renderer.render(scene, cam);
     renderer.readRenderTargetPixels(target, 0, 0, W, D, px);
     for (let k = 0; k < W * D; k++) if (px[k * 4] > STEP * 255) blocked[k] = 1;
+    if (!sx && !sz) for (let k = 0; k < W * D; k++) top[k] = px[k * 4];   // the straight-down picture: how high the top of things is
   }
   renderer.setRenderTarget(null);
   renderer.setClearColor(clear, alpha);
@@ -68,19 +69,35 @@ function floorMap(scene, renderer, hidden) {
   height.dispose();
 
   // pixel row j counts up from the bottom of the picture, which is the +z edge
-  const solidAt = (x, z) => {
+  const cellOf = (x, z) => {
     const i = Math.floor((x - BOUNDS.x0) / CELL), j = Math.floor((BOUNDS.z1 - z) / CELL);
-    return i < 0 || j < 0 || i >= W || j >= D || blocked[j * W + i] === 1;
+    return i < 0 || j < 0 || i >= W || j >= D ? -1 : j * W + i;
   };
+  const solidAt = (x, z) => { const k = cellOf(x, z); return k < 0 || blocked[k] === 1; };
+  // the height of the highest thing under knee height at (x, z); Infinity where there is no floor or it is taller
+  const heightAt = (x, z) => { const k = cellOf(x, z); return k < 0 || top[k] === 255 ? Infinity : top[k] / 255; };
   // free if her middle and a ring round her are all on open floor
   const ring = Array.from({ length: 16 }, (_, k) => [Math.cos(k / 16 * Math.PI * 2), Math.sin(k / 16 * Math.PI * 2)]);
   const isFree = (x, z, r = RADIUS) => !solidAt(x, z) && ring.every(([c, s]) => !solidAt(x + c * r, z + s * r) && !solidAt(x + c * r * 0.5, z + s * r * 0.5));
-  return { isFree };
+  return { isFree, heightAt };
 }
+
+// How each feeling shows in her body. The numbers blend smoothly from one feeling to the next.
+const STYLE = {
+  neutral: { speed: 1, wag: 1, tailRate: 2.4, bounce: 1, hop: 0, headX: 0, tilt: 0, nod: 0, droop: 0, arms: 0, shake: 0, sleepy: 0 },
+  happy: { speed: 1.15, wag: 1.8, tailRate: 5.5, bounce: 1.8, hop: 1, headX: -0.06, tilt: 0, nod: 0, droop: -0.05, arms: -0.2, shake: 0, sleepy: 0 },
+  sad: { speed: 0.6, wag: 0.3, tailRate: 1.2, bounce: 0.4, hop: 0, headX: 0.32, tilt: 0.05, nod: 0, droop: 0.3, arms: 0.12, shake: 0, sleepy: 0 },
+  angry: { speed: 1.1, wag: 0.5, tailRate: 9, bounce: 2.4, hop: 0, headX: 0.12, tilt: 0, nod: 0, droop: -0.1, arms: -0.35, shake: 1, sleepy: 0 },
+  bored: { speed: 0.75, wag: 0.5, tailRate: 1.1, bounce: 0.6, hop: 0, headX: 0.06, tilt: 0.2, nod: 0, droop: 0.12, arms: 0.05, shake: 0, sleepy: 0 },
+  sleepy: { speed: 0.5, wag: 0.25, tailRate: 0.8, bounce: 0.4, hop: 0, headX: 0.22, tilt: 0.08, nod: 1, droop: 0.25, arms: 0.1, shake: 0, sleepy: 1 },
+};
 
 export function createWalker({ squirrel, scene, renderer, camera, controls, hidden }) {
   const { group, parts } = squirrel;
-  const { isFree } = floorMap(scene, renderer, [...hidden, group]);
+  let map = floorMap(scene, renderer, [...hidden, group]);
+  const isFree = (x, z, r) => map.isFree(x, z, r);
+  // redraw the map after something has been moved, opened or shut
+  const refresh = () => { map = floorMap(scene, renderer, [...hidden, group]); };
 
   // if she was put somewhere she does not fit, nudge her to the nearest open floor
   if (!isFree(group.position.x, group.position.z)) {
@@ -102,12 +119,20 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
   addEventListener('blur', () => keys.clear());
 
   const baseTailY = parts.tail.rotation.y, arms = [[parts.armL, 1], [parts.armR, -1]], legs = [[parts.legL, 1], [parts.legR, -1]];
-  let heading = group.rotation.y, phase = 0, walk = 0, time = 0;
+  const baseArmZ = parts.armL.rotation.z;
+  let heading = group.rotation.y, phase = 0, walk = 0, time = 0, front = 0, over = 0;
   const forward = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const style = { ...STYLE.neutral };
 
-  // Moves and animates her. Returns true when she walked this frame.
-  function update(dt) {
+  // Moves and animates her. `mood` is how she feels; `carry` is 'front', 'over'
+  // (above her head) or nothing. Returns whether she walked, whether she walked
+  // into something, and whether any walking key is held.
+  function update(dt, { mood = 'neutral', carry } = {}) {
     time += dt;
+    const want = STYLE[mood] || STYLE.neutral, ease = Math.min(1, dt * 4);
+    for (const k in style) style[k] += (want[k] - style[k]) * ease;
+    front += ((carry === 'front' ? 1 : 0) - front) * Math.min(1, dt * 10);
+    over += ((carry === 'over' ? 1 : 0) - over) * Math.min(1, dt * 10);
     // directions are the screen's: up walks away from the camera, left walks to the screen's left
     camera.getWorldDirection(forward);
     forward.y = 0;
@@ -118,7 +143,7 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
     if (keys.has('down')) move.sub(forward);
     if (keys.has('right')) move.add(right);
     if (keys.has('left')) move.sub(right);
-    let walked = 0;
+    let walked = 0, bumped = false;
     if (move.lengthSq() > 0) {
       move.normalize();
       // turn to face the way she is going, the short way round
@@ -126,13 +151,15 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
       let d = want - heading;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       heading += d * Math.min(1, dt * 12);
-      // step, sliding along walls rather than stopping dead
-      const step = SPEED * dt, p = group.position, x0 = p.x, z0 = p.z;
+      // step, sliding along walls rather than stopping dead; if something has been
+      // put down on top of her, she can walk out of it
+      const step = SPEED * style.speed * dt, p = group.position, x0 = p.x, z0 = p.z;
       const nx = x0 + move.x * step, nz = z0 + move.z * step;
-      if (isFree(nx, nz)) { p.x = nx; p.z = nz; }
+      if (!isFree(x0, z0) || isFree(nx, nz)) { p.x = nx; p.z = nz; }
       else if (isFree(nx, z0)) p.x = nx;
       else if (isFree(x0, nz)) p.z = nz;
       walked = Math.hypot(p.x - x0, p.z - z0);
+      bumped = walked < step * 0.3;
       if (walked) {
         // the camera comes along, keeping whatever angle the viewer chose
         camera.position.x += p.x - x0; camera.position.z += p.z - z0;
@@ -144,20 +171,44 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
     phase += walked * STRIDE;
 
     // the walk: legs and arms swing in opposite pairs, a little bounce and waddle
-    const s = Math.sin(phase);
+    const s = Math.sin(phase), idle = 1 - walk, carrying = front + over;
     for (const [leg, side] of legs) leg.rotation.x = side * s * 0.5 * walk;
-    for (const [arm, side] of arms) arm.rotation.x = -side * s * 0.6 * walk + Math.sin(time * 1.6 + side) * 0.03;
+    for (const [arm, side] of arms) {
+      const swing = -side * s * 0.6 * walk * (1 - carrying) + Math.sin(time * 1.6 + side) * 0.03 + style.arms
+        + style.shake * Math.sin(time * 22 + side) * 0.06 * idle;
+      arm.rotation.x = swing * (1 - carrying) - 1.25 * front - 2.9 * over;      // holding something out in front, or up over her head
+      arm.rotation.z = side * (baseArmZ * (1 - carrying) + 0.18 * carrying);
+    }
+    const hop = style.hop * idle * Math.max(0, Math.sin(time * 7)) * 0.035;      // little happy bounces when standing
     group.rotation.set(0, heading, Math.sin(phase) * 0.05 * walk);
-    group.position.y = 0.01 + Math.abs(s) * 0.022 * walk;
-    parts.head.rotation.z = -s * 0.04 * walk + Math.sin(time * 0.9) * 0.025;
-    parts.head.rotation.x = Math.sin(time * 1.3) * 0.015;
-    // the tail waves all the time, a little more while she walks
-    const wag = 1 + walk;
-    parts.tail.rotation.z = Math.sin(time * 2.4) * 0.07 * wag;
-    parts.tail.rotation.y = baseTailY + Math.sin(time * 2.4 + 0.6) * 0.08 * wag;
-    parts.tail.rotation.x = Math.sin(time * 1.7) * 0.04 + s * 0.05 * walk;
-    return walked > 0;
+    group.position.y = 0.01 + Math.abs(s) * 0.022 * walk * style.bounce + hop;
+    parts.head.rotation.z = -s * 0.04 * walk + Math.sin(time * 0.9) * 0.025 + style.tilt;
+    parts.head.rotation.x = Math.sin(time * 1.3) * 0.015 + style.headX + style.nod * (0.5 + 0.5 * Math.sin(time * 0.9)) * 0.18;
+    // the tail waves all the time: wags when she is happy, flicks when she is cross, droops when she is low
+    const wag = (1 + walk) * style.wag;
+    parts.tail.rotation.z = Math.sin(time * style.tailRate) * 0.07 * wag;
+    parts.tail.rotation.y = baseTailY + Math.sin(time * style.tailRate + 0.6) * 0.08 * wag;
+    parts.tail.rotation.x = Math.sin(time * 1.7) * 0.04 + s * 0.05 * walk - style.droop;
+    // sleepy: Zs drift up from her head
+    parts.zzz.visible = style.sleepy > 0.5;
+    if (parts.zzz.visible) parts.zzz.children.forEach((z, i) => {
+      const f = (time * 0.45 + i / 3) % 1;
+      z.position.set(0.16 + f * 0.16, 0.42 + f * 0.32, 0.02);
+      z.scale.setScalar(0.05 + f * 0.07);
+      z.material.opacity = Math.min(1, (1 - f) * 2) * Math.min(1, f * 6);
+    });
+    return { walked: walked > 0, bumped, input: move.lengthSq() > 0 };
   }
 
-  return { update, isFree };
+  return {
+    update, isFree, refresh,
+    heightAt: (x, z) => map.heightAt(x, z),
+    get heading() { return heading; },
+    // put her somewhere, facing `h` (radians; 0 faces +z), bringing the camera along
+    place(x, z, h = heading) {
+      camera.position.x += x - group.position.x; camera.position.z += z - group.position.z;
+      controls.target.x += x - group.position.x; controls.target.z += z - group.position.z;
+      group.position.x = x; group.position.z = z; heading = h;
+    },
+  };
 }

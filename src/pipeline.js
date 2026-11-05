@@ -14,6 +14,7 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 const ONE_WHITE = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
 ONE_WHITE.needsUpdate = true;
@@ -188,6 +189,13 @@ export function createPipeline(scene, camera) {
   bloom.setSize = (w, h) => bloomSetSize(Math.ceil(w / 2), Math.ceil(h / 2));
   composer.addPass(bloom);
 
+  // A soft glowing outline round whatever the squirrel could pick up or open next.
+  const outline = new OutlinePass(new THREE.Vector2(256, 256), scene, camera);
+  Object.assign(outline, { edgeStrength: 3.2, edgeGlow: 0.6, edgeThickness: 1.6, pulsePeriod: 1.8 });
+  outline.visibleEdgeColor.set(0xfff1a8);
+  outline.hiddenEdgeColor.set(0xd98aa8);
+  composer.addPass(outline);
+
   composer.addPass(new OutputPass());
   composer.addPass(new SMAAPass());
 
@@ -244,5 +252,6 @@ export function createPipeline(scene, camera) {
     return +((performance.now() - t0) / frames).toFixed(2);
   };
 
-  return { renderer, hideFromAO, invalidate, start, setVolumetric: cfg => beams.configure(cfg) };
+  const setOutline = objects => { outline.selectedObjects = objects; };
+  return { renderer, hideFromAO, invalidate, start, setVolumetric: cfg => beams.configure(cfg), setOutline };
 }

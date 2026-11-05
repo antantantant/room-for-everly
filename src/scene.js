@@ -93,6 +93,27 @@ export function buildScene(scene, renderer) {
     parent.add(g);
     return g;
   };
+  // ---------- things Everly's squirrel can use ----------
+  // Anything she can pick up, open or switch is kept `live`: it is not folded into
+  // the merged meshes at the end and its transform is not frozen, so it can move.
+  const live = new Set(), interactables = [];
+  function pickable(obj, name, opts = {}) {
+    live.add(obj);
+    interactables.push({ kind: 'pick', obj, name, ...opts });
+    return obj;
+  }
+  // Something with two states. apply(k) poses it for k from 0 (closed, off) to 1 (open, on);
+  // update() eases k towards the state, `speed` times per second.
+  // `near`: the parts she must be close to (a wardrobe's doors, so with them open she can reach in past them)
+  function switchable(obj, name, apply, { on = false, verbs = ['open', 'close'], speed = 2.5, reach, near } = {}) {
+    live.add(obj);
+    const it = { kind: 'switch', obj, name, verbs, on, k: on ? 1 : 0, speed, apply, reach, near };
+    apply(it.k);
+    interactables.push(it);
+    return it;
+  }
+  const LIGHT = { verbs: ['turn on', 'turn off'], speed: 30 };
+
   // A flat picture that hangs on a wall and, like the wall, is only visible from inside.
   const flat = (w, h, material, x, y, z, parent) => {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
@@ -181,11 +202,14 @@ export function buildScene(scene, renderer) {
     return m;
   }
   // uvSize = [metres per unit of u, metres per unit of v]; guessed from the bounding box when omitted.
-  function fluff(meshes, { length, layers, strand, curl = 0, droop = 0.25, shade = 0.5, uvSize }) {
-    const byMat = new Map();
+  // With `parent`, the coat is built in that object's own space and hung on it, so it moves with it.
+  function fluff(meshes, { length, layers, strand, curl = 0, droop = 0.25, shade = 0.5, uvSize, parent }) {
+    const byMat = new Map(), toParent = new THREE.Matrix4();
+    if (parent) { parent.updateWorldMatrix(true, false); toParent.copy(parent.matrixWorld).invert(); }
     for (const mesh of meshes) {
       mesh.updateWorldMatrix(true, false);
-      const src = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(mesh.matrixWorld);
+      const place = parent ? toParent.clone().multiply(mesh.matrixWorld) : mesh.matrixWorld;
+      const src = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(place);
       src.computeBoundingBox();
       const size = src.boundingBox.getSize(new THREE.Vector3());
       const us = (uvSize ? uvSize[0] : Math.PI * Math.max(size.x, size.z)) / strand;
@@ -214,7 +238,7 @@ export function buildScene(scene, renderer) {
     for (const [material, parts] of byMat) {
       const coat = new THREE.Mesh(mergeGeometries(parts), furMaterial(material, curl, shade));
       coat.receiveShadow = true;
-      scene.add(coat);
+      (parent || scene).add(coat);
       hideFromAO.push(coat);      // the solid surface underneath does the occluding
       parts.forEach(g => g.dispose());
     }
@@ -432,6 +456,36 @@ export function buildScene(scene, renderer) {
     for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; g.beginPath(); g.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, r * 0.8, 0, Math.PI * 2); g.fill(); }
     g.fillStyle = '#f6cf3a'; g.beginPath(); g.arc(x, y, r * 0.6, 0, Math.PI * 2); g.fill();
   };
+
+  // What is on TV: Melody hopping across a meadow under a sky that slowly changes
+  // colour, with hearts floating up. Redrawn fifteen times a second while it is on.
+  const tvShow = (() => {
+    const c = document.createElement('canvas');
+    c.width = 320; c.height = 180;
+    const g = c.getContext('2d'), texture = new THREE.CanvasTexture(c);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    let time = 0, wait = 0;
+    const draw = () => {
+      const sky = g.createLinearGradient(0, 0, 0, 180);
+      sky.addColorStop(0, `hsl(${(200 + time * 12) % 360}, 75%, 80%)`);
+      sky.addColorStop(1, '#fde6ee');
+      g.fillStyle = sky;
+      g.fillRect(0, 0, 320, 180);
+      g.fillStyle = '#c3e8b4';
+      g.beginPath(); g.ellipse(160, 200, 260, 70, 0, 0, Math.PI * 2); g.fill();
+      for (let i = 0; i < 6; i++) flower2d(g, 20 + i * 56, 160 + (i % 2) * 8, 5);
+      g.fillStyle = '#f48fb1';
+      for (let i = 0; i < 7; i++) heart2d(g, (i * 53 + 25) % 320, 190 - ((time * 28 + i * 41) % 230), 0.5 + (i % 3) * 0.2);
+      const x = 40 + (time * 45) % 260, hop = Math.abs(Math.sin(time * 4.2));
+      drawMelody(g, x, 118 - hop * 26, 46);
+      texture.needsUpdate = true;
+    };
+    draw();
+    return {
+      texture, on: false,
+      tick(dt) { if (!this.on) return; time += dt; wait -= dt; if (wait <= 0) { wait = 1 / 15; draw(); } },
+    };
+  })();
 
   // The living-room rug: blush pink, a white scalloped border, Melody in the middle, hearts and daisies about her.
   const rugTex = tex(1024, 738, (g, w, h) => {
@@ -871,8 +925,9 @@ export function buildScene(scene, renderer) {
   }
 
   // A two-leaf wooden casement, three bevelled panes per leaf, with a handle on each leaf.
-  // open = how far each leaf is swung into the room, in radians: [left, right]
-  function casement(w, h, parent, open = [0, 0]) {
+  // Returns its two hinges, [group, side]: side * angle swings a leaf into the room.
+  function casement(w, h, parent) {
+    const hinges = [];
     const f = 0.05, st = 0.045, mu = 0.024;
     for (const s of [-1, 1]) {
       box(w, f, 0.07, frameWood, 0, s * (h - f) / 2, 0, parent);
@@ -882,7 +937,8 @@ export function buildScene(scene, renderer) {
     const pw = lw - 2 * st, ph = (ih - 2 * st - 2 * mu) / 3;
     const geo = paneGeo(pw, ph);
     for (const s of [-1, 1]) {
-      const hinge = group(s * iw / 2, 0, 0.012, s * open[s < 0 ? 0 : 1], parent);
+      const hinge = group(s * iw / 2, 0, 0.012, 0, parent);
+      hinges.push([hinge, s]);
       const leaf = group(-s * lw / 2, 0, 0, 0, hinge);
       for (const t of [-1, 1]) {
         box(st, ih, 0.045, frameWood, t * (lw - st) / 2, 0, 0, leaf);
@@ -901,6 +957,7 @@ export function buildScene(scene, renderer) {
       cyl(0.006, 0.006, 0.035, iron, hx, -0.05, face + 0.0255, leaf).rotation.x = Math.PI / 2;
       ball(0.019, brass, hx, -0.05, face + 0.053, leaf, 1, 1, 0.8);
     }
+    return hinges;
   }
 
   // tie: the edge (-1 or +1) a tie-back gathers the curtain towards, or 0 to let it hang straight
@@ -922,33 +979,44 @@ export function buildScene(scene, renderer) {
     return m;
   }
 
-  // The breeze. Curtains by the open window are pinned at the rod and free at
-  // the hem; the wind comes in swells, pushing them into the room and letting
-  // them fall back. The same motion is applied wherever those curtains are
-  // drawn (colour, shadow, and the depth map the light beams use).
+  // The breeze. Curtains are pinned at the rod and free at the hem; when their
+  // window is open the wind comes in swells, pushing them into the room and
+  // letting them fall back. Each window has its own `gate` (0 shut, 1 open). The
+  // same motion is applied wherever the curtains are drawn (colour, shadow, and
+  // the depth map the light beams use).
   const wind = { uTime: { value: 0 }, uWind: { value: 0 } };
-  const blown = material => {
+  const blown = (material, gate) => {
     material.onBeforeCompile = sh => {
-      Object.assign(sh.uniforms, wind);
+      Object.assign(sh.uniforms, wind, { uGate: gate });
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime, uWind;')
+        .replace('#include <common>', '#include <common>\nuniform float uTime, uWind, uGate;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
+          float gust = uWind * uGate;
           float hang = 1. - uv.y, free = hang * hang;
           float swell = .55 + .45 * sin(uTime * .6) * sin(uTime * .23 + 1.3);
           float ripple = .5 + .5 * sin(uTime * 1.7 - hang * 3.2 + position.x * 5.);
-          transformed.z += uWind * free * swell * (.09 + .06 * ripple);
-          transformed.x += uWind * free * .035 * sin(uTime * 1.1 + hang * 4.);
-          transformed.y += uWind * free * swell * .02;`);
+          transformed.z += gust * free * swell * (.09 + .06 * ripple);
+          transformed.x += gust * free * .035 * sin(uTime * 1.1 + hang * 4.);
+          transformed.y += gust * free * swell * .02;`);
     };
     material.customProgramCacheKey = () => 'blown';
     return material;
   };
   const windCurtains = [];
-  const blownDepth = blown(new THREE.MeshDepthMaterial({ side: THREE.DoubleSide }));
-  const blownMask = blown(new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+  // a window's curtain fabric, with its shadow and beam-mask twins, all moving with its gate
+  const breezeKit = map => {
+    const gate = { value: 0 };
+    return {
+      gate,
+      mat: blown(new THREE.MeshStandardMaterial({ map, roughness: 0.85, side: THREE.DoubleSide }), gate),
+      depth: blown(new THREE.MeshDepthMaterial({ side: THREE.DoubleSide }), gate),
+      mask: blown(new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), gate),
+    };
+  };
 
   // A window set `depth` metres into the wall, with an iron rod and a pair of curtains.
-  function windowUnit(w, depth, x, z, rotY, curtainMat, curtainBottom, open, tied, y0 = Y0, y1 = Y1) {
+  // `open` = [left, right]: how far each leaf swings in when it is open.
+  function windowUnit(w, depth, x, z, rotY, curtainMap, curtainBottom, isOpen, open, tied, y0 = Y0, y1 = Y1) {
     const h = y1 - y0, g = group(x, (y0 + y1) / 2, z, rotY);
     const portal = new THREE.Mesh(new THREE.PlaneGeometry(w, h), portalMat);
     portal.renderOrder = -2;
@@ -964,14 +1032,14 @@ export function buildScene(scene, renderer) {
       lid.rotation.x = s * Math.PI / 2;
     }
     box(w + 0.1, 0.035, 0.06, stone, 0, -h / 2 - 0.0175, 0.03, g);          // sill nosing
-    casement(w, h, group(0, 0, -depth + 0.035, 0, g), open);
+    const frame = group(0, 0, -depth + 0.035, 0, g), hinges = casement(w, h, frame), kit = breezeKit(curtainMap);
 
     const rodY = h / 2 + 0.12, rodLen = w + 0.56, yb = curtainBottom - (y0 + y1) / 2;
     cyl(0.011, 0.011, rodLen, iron, 0, rodY, 0.09, g).rotation.z = Math.PI / 2;
     for (const s of [-1, 1]) {
       ball(0.024, iron, s * rodLen / 2, rodY, 0.09, g);
       box(0.012, 0.012, 0.09, iron, s * (w / 2 + 0.2), rodY, 0.045, g);
-      const c = curtain(0.32, rodY - yb, curtainMat, tied ? s : 0);
+      const c = curtain(0.32, rodY - yb, kit.mat, tied ? s : 0);
       c.position.set(s * (w / 2 + 0.09), (rodY + yb) / 2, 0.09);
       g.add(c);
       if (tied) {                                  // the tie-back band
@@ -979,20 +1047,25 @@ export function buildScene(scene, renderer) {
         band.rotation.x = Math.PI / 2;
         band.scale.set(1, 1.6, 1);
       }
-      if (open) { c.customDepthMaterial = blownDepth; windCurtains.push(c); }
+      c.customDepthMaterial = kit.depth;
+      c.userData.mask = kit.mask;
+      windCurtains.push(c);
     }
+    // the squirrel can open and shut it; open, the breeze gets in
+    switchable(frame, 'window', k => {
+      for (const [hinge, side] of hinges) hinge.rotation.y = side * k * open[side < 0 ? 0 : 1];
+      kit.gate.value = k;
+    }, { on: isOpen, speed: 1.2, reach: 1.3 });
     return g;
   }
 
   // ---------- window placements: all three face east ----------
-  const sheerPink = mat(0xffffff, linenTex('#fbe1e8', '#e9b3c3', 3, 10), { side: THREE.DoubleSide });
-  const dottyPink = mat(0xffffff, dotsTex('#fbd3df', '#ffffff', 3, 8), { side: THREE.DoubleSide });
+  const sheerMap = linenTex('#fbe1e8', '#e9b3c3', 3, 10), dottyMap = dotsTex('#fbd3df', '#ffffff', 3, 8);
   const DEEP = 0.3;                                                     // old stone walls: windows sit back in them
-  const breezySheer = blown(new THREE.MeshStandardMaterial({ map: sheerPink.map, roughness: 0.85, side: THREE.DoubleSide }));
   const [lz0, lz1, ly0, ly1] = LIVING_WIN, [bz0, bz1, by0, by1] = BED_WIN, [kz0, kz1, ky0, ky1] = KIDS_WIN;
-  windowUnit(lz1 - lz0, DEEP, 0, (lz0 + lz1) / 2, Math.PI / 2, breezySheer, 0.8, [1.4, 1.3], false, ly0, ly1);   // living room: open, with the breeze
-  windowUnit(bz1 - bz0, DEEP, 0, (bz0 + bz1) / 2, Math.PI / 2, sheerPink, 1.25, undefined, true, by0, by1);      // over the bed
-  windowUnit(kz1 - kz0, DEEP, XB, (kz0 + kz1) / 2, Math.PI / 2, dottyPink, 0.3, undefined, true, ky0, ky1);      // the kids' room
+  windowUnit(lz1 - lz0, DEEP, 0, (lz0 + lz1) / 2, Math.PI / 2, sheerMap, 0.8, true, [1.4, 1.3], false, ly0, ly1);    // living room: open, with the breeze
+  windowUnit(bz1 - bz0, DEEP, 0, (bz0 + bz1) / 2, Math.PI / 2, sheerMap, 1.25, false, [1.3, 1.3], true, by0, by1);   // over the bed
+  windowUnit(kz1 - kz0, DEEP, XB, (kz0 + kz1) / 2, Math.PI / 2, dottyMap, 0.3, false, [1.3, 1.3], true, ky0, ky1);   // the kids' room
 
 
   // ---------- small shared pieces ----------
@@ -1058,10 +1131,13 @@ export function buildScene(scene, renderer) {
     const proxy = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 12), new THREE.MeshBasicMaterial({ visible: false }));
     proxy.position.set(x, h / 2, z);
     root.add(proxy);
-    lamps.push({ light, proxy, shades, bulb, power, on: false });
+    const entry = { light, proxy, shades, bulb, power, on: false };
+    lamps.push(entry);
+    return entry;
   }
   function setLamp(l, on) {
     l.on = on;
+    if (l.switch) { l.switch.on = on; l.switch.k = on ? 1 : 0; }   // a click and the squirrel agree on whether it is on
     l.light.intensity = on ? l.power : 0;
     for (const m of l.shades) { m.emissive.setRGB(1, 0.72, 0.45); m.emissiveIntensity = on ? 0.9 : 0; }
     l.bulb.emissive.setRGB(1, 0.8, 0.55);
@@ -1154,17 +1230,18 @@ export function buildScene(scene, renderer) {
       add(new THREE.SphereGeometry(0.014 * k, 12, 8), white, Math.cos(a) * 0.017 * k, Math.sin(a) * 0.017 * k, 0, fl).scale.z = 0.45;
     }
     add(new THREE.SphereGeometry(0.009 * k, 12, 8), yellow, 0, 0, 0.005 * k, fl);
-    fluff(plush, { length: 0.006 * k, layers: 9, strand: 0.0017 * k, droop: 0.05, shade: 0.78 });
-    return g;
+    fluff(plush, { length: 0.006 * k, layers: 9, strand: 0.0017 * k, droop: 0.05, shade: 0.78, parent: g });
+    return pickable(g, 'Melody plush', { plush: true });
   }
 
   // a cushion with a face on it, standing up and leaning back, facing local +z of `parent`
   function faceCushion(map, wd, x, y, z, parent, lean = 0.2) {
-    const c = add(pillowGeo(wd, wd, 0.12), mat(0xffffff, map), x, y, z, parent);
+    const g = pickable(group(x, y, z, 0, parent), 'Melody cushion');
+    const c = add(pillowGeo(wd, wd, 0.12), mat(0xffffff, map), 0, 0, 0, g);
     c.rotation.order = 'YXZ';
     c.rotation.set(-Math.PI / 2 + lean, Math.PI, 0);
-    fluff([c], { length: 0.005, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [wd, wd] });
-    return c;
+    fluff([c], { length: 0.005, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [wd, wd], parent: g });
+    return g;
   }
 
   // A sofa built facing +z, its length along x. Returns the height of the seat and where cushions can sit.
@@ -1206,19 +1283,40 @@ export function buildScene(scene, renderer) {
     return g;
   }
 
-  // a two-door wardrobe built facing +z
+  // clothes on a hanger hanging from (x, y, z): thin across x, `depth` deep along z
+  const garmentColors = [0xf7b6c8, 0xffffff, 0xfbd3df, 0xd9c8f0, 0xfbe7a6, 0xf48fb1, 0xc6e2f5, 0xfde6ee];
+  function garment(c, len, depth, x, y, z, parent) {
+    const g = pickable(group(x, y, z, 0, parent), 'clothes', { lay: [0, 0, Math.PI / 2] });
+    add(new THREE.TorusGeometry(0.018, 0.003, 6, 16, Math.PI), gold, 0, 0, 0, g).rotation.y = Math.PI / 2;
+    soft(0.035, len, depth, 0.015, paint(c), 0, -0.035 - len / 2, 0, g);
+    return g;
+  }
+  // a two-door wardrobe built facing +z: hollow, a rail of clothes inside, doors that open
   function wardrobe(wd, h, d, x, z, rotY, body, doors) {
-    const g = group(x, 0, z, rotY);
+    const g = group(x, 0, z, rotY), t = 0.025, cy = 0.06 + (h - 0.06) / 2;
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(0.02, 0.015, 0.06, gold, sx * (wd / 2 - 0.06), 0.03, sz * (d / 2 - 0.06), g);
-    soft(wd, h - 0.06, d, 0.02, body, 0, 0.06 + (h - 0.06) / 2, 0, g);
+    soft(wd, h - 0.06, t, 0.008, body, 0, cy, -d / 2 + t / 2, g);                                // back
+    for (const s of [-1, 1]) soft(t, h - 0.06, d, 0.008, body, s * (wd / 2 - t / 2), cy, 0, g);  // sides
+    soft(wd, t, d, 0.008, body, 0, 0.06 + t / 2, 0, g);                                           // floor
+    soft(wd, t, d, 0.008, body, 0, h - t / 2, 0, g);                                              // roof
     soft(wd + 0.04, 0.04, d + 0.03, 0.012, body, 0, h + 0.02, 0, g);
-    for (const s of [-1, 1]) {
-      const dx = s * wd / 4, cy = 0.06 + (h - 0.06) / 2;
-      soft(wd / 2 - 0.03, h - 0.16, 0.02, 0.008, doors, dx, cy, d / 2 + 0.006, g);
-      for (const f of [0.3, 0.7]) soft(wd / 2 - 0.15, (h - 0.2) * 0.33, 0.012, 0.005, body, dx, 0.08 + (h - 0.1) * f, d / 2 + 0.018, g);
-      ball(0.02, gold, s * 0.05, cy, d / 2 + 0.03, g);
+    flat(wd - 2 * t, h - 0.06 - 2 * t, paint(0xfde6ee), 0, cy, -d / 2 + t + 0.002, g);              // a blush lining
+    cyl(0.01, 0.01, wd - 2 * t, gold, 0, h - 0.17, 0, g).rotation.z = Math.PI / 2;               // the rail
+    const clothes = [];
+    for (let cx = -wd / 2 + 0.1, i = 0; cx < wd / 2 - 0.08; cx += 0.11, i++) {
+      clothes.push(garment(garmentColors[(i * 3 + Math.round(wd * 10)) % garmentColors.length], 0.55 + rand() * 0.3, d - 0.18, cx, h - 0.175, 0, g));
     }
-    add(new THREE.ShapeGeometry(heartShape(0.1), 16), paint(0xf48fb1), 0, h - 0.08, d / 2 + 0.017, g);
+    const hinges = [];
+    for (const s of [-1, 1]) {
+      const hinge = group(s * wd / 2, 0, d / 2 + 0.006, 0, g), dx = -s * wd / 4;
+      hinges.push([hinge, s]);
+      soft(wd / 2 - 0.01, h - 0.1, 0.02, 0.008, doors, dx, cy, 0, hinge);
+      for (const f of [0.3, 0.7]) soft(wd / 2 - 0.15, (h - 0.2) * 0.33, 0.012, 0.005, body, dx, 0.08 + (h - 0.1) * f, 0.012, hinge);
+      ball(0.02, gold, -s * (wd / 2 - 0.05), cy, 0.025, hinge);
+      add(new THREE.ShapeGeometry(heartShape(0.07), 16), paint(0xf48fb1), dx, h - 0.14, 0.0115, hinge);
+    }
+    const it = switchable(g, 'wardrobe', k => { for (const [hinge, s] of hinges) hinge.rotation.y = s * k * 1.8; }, { speed: 1.6, near: hinges.map(([h]) => h) });
+    for (const c of clothes) interactables.find(i => i.obj === c).inside = it;   // reachable only with the doors open
     return g;
   }
 
@@ -1233,20 +1331,24 @@ export function buildScene(scene, renderer) {
       const h = add(new THREE.ShapeGeometry(heartShape(0.16), 24), paint(0xf48fb1), wd / 2, 1.88, s * 0.023, g);
       if (s < 0) h.rotation.y = Math.PI;
     }
+    return g;
   }
-  doorLeaf(HALL_DOOR[0] + 0.02, ZM + T / 2, HALL_DOOR[1] - HALL_DOOR[0] - 0.02, -Math.PI / 2 + 0.12);   // swung into the bedroom
-  doorLeaf(DOOR5[1] - 0.02, ZN - T / 2, DOOR5[1] - DOOR5[0] - 0.02, Math.PI / 2 + 0.12);               // door 5, also into the bedroom, hung on its west side so it folds back beside the desk and leaves the way in clear
-  doorLeaf(XB + T / 2, KIDS_DOOR[0] + 0.02, KIDS_DOOR[1] - KIDS_DOOR[0] - 0.02, -0.12);                // into the kids' room
+  // each door swings between shut (lying along its wall) and open; they all start open
+  const door = (g, shut, open) => switchable(g, 'door', k => { g.rotation.y = shut + (open - shut) * k; }, { on: true, speed: 1.4 });
+  door(doorLeaf(HALL_DOOR[0] + 0.02, ZM + T / 2, HALL_DOOR[1] - HALL_DOOR[0] - 0.02, 0), 0, -Math.PI / 2 + 0.12);     // swings into the bedroom
+  door(doorLeaf(DOOR5[1] - 0.02, ZN - T / 2, DOOR5[1] - DOOR5[0] - 0.02, 0), Math.PI, Math.PI / 2 + 0.12);         // door 5, also into the bedroom, hung on its west side so it folds back beside the desk
+  door(doorLeaf(XB + T / 2, KIDS_DOOR[0] + 0.02, KIDS_DOOR[1] - KIDS_DOOR[0] - 0.02, 0), -Math.PI / 2, -0.12);      // into the kids' room
 
   // a table lamp: a pink gourd base and a dotty shade
-  function tableLamp(x, y, z, power) {
+  function tableLamp(x, y, z, power, name) {
     const g = group(x, y, z);
     add(turn([[0, 0], [0.06, 0], [0.085, 0.05], [0.08, 0.12], [0.04, 0.18], [0.02, 0.22], [0, 0.22]], 32), paint(0xf7a8c4), 0, 0, 0, g);
     cyl(0.006, 0.006, 0.08, gold, 0, 0.25, 0, g);
     const shade = shadeMat(0xffffff, dotsTex('#ffffff', '#f7b9c8', 4, 1)), bulb = bulbMat();
     add(new THREE.CylinderGeometry(0.1, 0.15, 0.17, 40, 1, true), shade, 0, 0.33, 0, g);
     ball(0.03, bulb, 0, 0.29, 0, g);
-    lamp(x, y + 0.3, z, { hit: [0.2, y + 0.42], shades: [shade], bulb, power, distance: 4 });
+    const l = lamp(x, y + 0.3, z, { hit: [0.2, y + 0.42], shades: [shade], bulb, power, distance: 4 });
+    l.switch = switchable(g, name, k => setLamp(l, k > 0.5), LIGHT);
   }
 
   // ---------- living room (top left of the sketch) ----------
@@ -1263,13 +1365,13 @@ export function buildScene(scene, renderer) {
     // 22: the sofa against the south wall, facing the TV
     const s = sofa(2.0, 0.92, 2.7, 0.5, 0, velvet(0xf7b6c8));
     faceCushion(melodyCushionTex, 0.36, -0.45, s.sit + 0.17, s.front - 0.04, s.g);
-    const heart = add(puffed(heartShape(0.34), 0.05, 0.035), velvet(0xffffff), 0.45, s.sit + 0.17, s.front - 0.04, s.g);
-    heart.rotation.x = -0.2;
+    const heart = pickable(group(0.45, s.sit + 0.17, s.front - 0.04, 0, s.g), 'heart cushion');
+    add(puffed(heartShape(0.34), 0.05, 0.035), velvet(0xffffff), 0, 0, 0, heart).rotation.x = -0.2;
     // 25: the loveseat under the east window, facing west into the room
     const l = sofa(1.5, 0.88, 0.48, 2.0, Math.PI / 2, velvet(0xfbd3df));
     faceCushion(melodyCushionTex, 0.32, 0.2, l.sit + 0.16, l.front - 0.04, l.g);
-    const star = add(puffed(starShape(0.15, 0.52), 0.05, 0.03), velvet(0xfbe7a6), -0.3, l.sit + 0.15, l.front - 0.04, l.g);
-    star.rotation.x = -0.2;
+    const star = pickable(group(-0.3, l.sit + 0.15, l.front - 0.04, 0, l.g), 'star cushion');
+    add(puffed(starShape(0.15, 0.52), 0.05, 0.03), velvet(0xfbe7a6), 0, 0, 0, star).rotation.x = -0.2;
   }
   {
     // 26: the coffee table, a tea set for two and a bowl of strawberries
@@ -1278,13 +1380,15 @@ export function buildScene(scene, renderer) {
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(0.022, 0.015, ty, gold, cx + sx * 0.4, ty / 2, cz + sz * 0.2);
     const t = ty + 0.04;
     for (const [dx, dz] of [[-0.25, 0.08], [0.2, -0.1]]) {
-      add(turn([[0, 0], [0.06, 0], [0.075, 0.008], [0, 0.008]]), porcelain, cx + dx, t, cz + dz);
-      add(turn([[0, 0], [0.03, 0], [0.042, 0.05], [0.04, 0.055], [0.036, 0.052], [0, 0.01]]), paint(0xf7a8c4), cx + dx, t + 0.008, cz + dz);
+      const cup = pickable(group(cx + dx, t, cz + dz), 'teacup');
+      add(turn([[0, 0], [0.06, 0], [0.075, 0.008], [0, 0.008]]), porcelain, 0, 0, 0, cup);
+      add(turn([[0, 0], [0.03, 0], [0.042, 0.05], [0.04, 0.055], [0.036, 0.052], [0, 0.01]]), paint(0xf7a8c4), 0, 0.008, 0, cup);
     }
-    add(turn([[0, 0], [0.05, 0], [0.09, 0.04], [0.085, 0.045], [0, 0.01]]), porcelain, cx + 0.05, t, cz + 0.1);
+    const bowl = pickable(group(cx + 0.05, t, cz + 0.1), 'bowl of strawberries');
+    add(turn([[0, 0], [0.05, 0], [0.09, 0.04], [0.085, 0.045], [0, 0.01]]), porcelain, 0, 0, 0, bowl);
     for (let i = 0; i < 7; i++) {
       const a = i * 2.4, r = 0.03 + (i % 3) * 0.015;
-      ball(1, mat(0xe0324d, null, { roughness: 0.35 }), cx + 0.05 + Math.cos(a) * r, t + 0.04 + (i % 2) * 0.012, cz + 0.1 + Math.sin(a) * r, root, 0.02, 0.024, 0.02);
+      ball(1, mat(0xe0324d, null, { roughness: 0.35 }), Math.cos(a) * r, 0.04 + (i % 2) * 0.012, Math.sin(a) * r, bowl, 0.02, 0.024, 0.02);
     }
   }
   {
@@ -1305,23 +1409,28 @@ export function buildScene(scene, renderer) {
     // in the open middle, under the TV: a little Melody, a stack of blocks and a ball
     melodyToy(-0.22, 0.12, 0.02, 0, 0.6, g);
     [[0xfbd3df, 0.12, 0.05], [0xbfe6d6, 0.2, -0.04], [0xfbe7a6, 0.15, 0.02]].forEach(([c, x, z], i) => {
-      const b = box(0.07, 0.07, 0.07, paint(c), x, 0.155 + (i === 2 ? 0.07 : 0), z, g);
-      b.rotation.y = i * 0.4;
+      box(0.07, 0.07, 0.07, paint(c), 0, 0, 0, pickable(group(x, 0.155 + (i === 2 ? 0.07 : 0), z, i * 0.4, g), 'toy block'));
     });
-    ball(0.06, paint(0xf48fb1), 0.33 - 0.02, 0.18, 0.04, g);
-    // TV
-    soft(0.36, 0.02, 0.2, 0.008, paint(0x3a3a40), 0, h + 0.01, -0.03, g);
-    cyl(0.022, 0.022, 0.16, chrome, 0, h + 0.09, -0.05, g);
-    soft(1.3, 0.75, 0.045, 0.012, mat(0x1d1d22, null, { roughness: 0.3 }), 0, h + 0.53, -0.05, g);
-    flat(1.26, 0.71, mat(0x07080b, null, { roughness: 0.06 }), 0, h + 0.53, -0.026, g);
+    ball(0.06, paint(0xf48fb1), 0, 0, 0, pickable(group(0.31, 0.18, 0.04, 0, g), 'ball'));
+    // the TV: switched on, a little cartoon plays and the room glows with it
+    const tv = group(0, 0, 0, 0, g);
+    soft(0.36, 0.02, 0.2, 0.008, paint(0x3a3a40), 0, h + 0.01, -0.03, tv);
+    cyl(0.022, 0.022, 0.16, chrome, 0, h + 0.09, -0.05, tv);
+    soft(1.3, 0.75, 0.045, 0.012, mat(0x1d1d22, null, { roughness: 0.3 }), 0, h + 0.53, -0.05, tv);
+    const screen = new THREE.MeshStandardMaterial({ color: 0x07080b, roughness: 0.06, emissive: 0xffffff, emissiveMap: tvShow.texture, emissiveIntensity: 0 });
+    flat(1.26, 0.71, screen, 0, h + 0.53, -0.026, tv);
+    const glow = new THREE.PointLight(0xd8e4ff, 0, 4.5, 2);
+    glow.position.set(2.45, h + 0.6, ZL - 0.23 - 0.7);
+    root.add(glow);
+    switchable(tv, 'TV', k => { screen.emissiveIntensity = k * 0.8; glow.intensity = k * 0.5; tvShow.on = k > 0.5; }, { ...LIGHT, speed: 5, reach: 1.2 });   // she can switch it on from a step back, clear of the toys
     // and more toys on the floor in front, as drawn
-    const toy = (c, x, z, ry) => { const b = box(0.08, 0.08, 0.08, paint(c), x, 0.04, z); b.rotation.y = ry; };
+    const toy = (c, x, z, ry) => box(0.08, 0.08, 0.08, paint(c), 0, 0, 0, pickable(group(x, 0.04, z, ry), 'toy block'));
     toy(0xbfe6d6, 2.15, ZL - 0.62, 0.3); toy(0xfbd3df, 2.27, ZL - 0.58, -0.4); toy(0xfbe7a6, 2.2, ZL - 0.7, 0.9);
     melodyToy(2.95, 0, ZL - 0.6, Math.PI - 0.5, 0.8);
   }
   // a Melody print above the sofa, and a spotty-pot plant in the north-east corner
   picture(melodyPosterTex, 0.6, 0.8, 0.04, paint(P.pink), group(2.7, 1.65, 0.006));
-  potPlant(0.38, 0, ZL - 0.38, 0.17, 0.32, mat(0xffffff, dotsTex('#ffffff', '#f4a6ba', 4, 2)), 15, 0.6, 0.22);
+  pickable(potPlant(0.38, 0, ZL - 0.38, 0.17, 0.32, mat(0xffffff, dotsTex('#ffffff', '#f4a6ba', 4, 2)), 15, 0.6, 0.22), 'plant');
 
   // ---------- kitchen along the south wall (21): cooktop and hood at the east end, then the sink ----------
   {
@@ -1343,11 +1452,22 @@ export function buildScene(scene, renderer) {
       const ring = add(new THREE.RingGeometry(0.065, 0.08, 40), mat(0x55555c, null, { roughness: 0.4 }), cx + dx, top + 0.009, 0.03, g);
       ring.rotation.x = -Math.PI / 2;
     }
-    const kettle = group(cx + 0.14, top + 0.01, 0.03, 0, g);
+    const kettle = pickable(group(cx + 0.14, top + 0.01, 0.03, 0, g), 'kettle');
     add(turn([[0, 0], [0.075, 0], [0.085, 0.06], [0.07, 0.13], [0.03, 0.155], [0, 0.16]]), paint(P.pink), 0, 0, 0, kettle);
     ball(0.016, paint(P.white), 0, 0.165, 0, kettle);
     add(new THREE.TorusGeometry(0.05, 0.009, 8, 24, Math.PI), paint(P.white), 0, 0.15, 0, kettle).rotation.y = Math.PI / 2;
     cyl(0.008, 0.016, 0.09, paint(P.pink), 0, 0.09, 0.09, kettle).rotation.x = 0.9;
+    // a little saucepan on the other ring, and a plate of cupcakes on the counter
+    const pan = pickable(group(cx - 0.14, top + 0.01, 0.03, 0.4, g), 'saucepan');
+    add(turn([[0, 0], [0.09, 0], [0.095, 0.08], [0.088, 0.082], [0.083, 0.008], [0, 0.008]]), mat(0xc9ced4, null, { metalness: 0.8, roughness: 0.3 }), 0, 0, 0, pan);
+    box(0.17, 0.016, 0.03, paint(P.pink), 0.17, 0.07, 0, pan);
+    const cakes = pickable(group(-0.15, top, 0.05, 0, g), 'cupcakes');
+    add(turn([[0, 0], [0.13, 0], [0.15, 0.012], [0.145, 0.016], [0, 0.008]]), porcelain, 0, 0, 0, cakes);
+    for (const [dx, dz, c] of [[-0.055, -0.03, 0xf7a8c4], [0.06, -0.025, 0xc6e2f5], [0, 0.06, 0xfbe7a6]]) {
+      add(turn([[0, 0], [0.03, 0], [0.038, 0.045], [0, 0.045]], 16), paint(c), dx, 0.012, dz, cakes);
+      ball(0.038, paint(0xfffafa), dx, 0.065, dz, cakes, 1, 0.75, 1);
+      ball(0.011, mat(0xe0324d, null, { roughness: 0.35 }), dx, 0.098, dz, cakes);
+    }
     // the hood over the cooktop, drawn above it in the sketch: a canopy and a chimney to the ceiling
     const hoodMat = paint(0xfbd3df), back = -dep / 2 - 0.01;
     add(new THREE.CylinderGeometry(0.2, 0.45, 0.3, 4, 1).rotateY(Math.PI / 4), hoodMat, cx, 1.75, back + 0.33, g);
@@ -1363,11 +1483,58 @@ export function buildScene(scene, renderer) {
     const shelfY = 1.55;
     soft(1.4, 0.03, 0.22, 0.01, paint(P.white), 0.55, shelfY, back + 0.12, g);
     [[P.pink, 0.0], [0xffffff, 0.14], [P.butter, 0.28]].forEach(([c, x]) => {
-      cyl(0.045, 0.045, 0.12, mat(0xfafcff, null, { roughness: 0.1 }), x, shelfY + 0.075, back + 0.12, g);
-      cyl(0.048, 0.048, 0.025, paint(c), x, shelfY + 0.15, back + 0.12, g);
+      const jar = pickable(group(x, shelfY, back + 0.12, 0, g), 'jar');
+      cyl(0.045, 0.045, 0.12, mat(0xfafcff, null, { roughness: 0.1 }), 0, 0.075, 0, jar);
+      cyl(0.048, 0.048, 0.025, paint(c), 0, 0.15, 0, jar);
     });
     for (let i = 0; i < 4; i++) cyl(0.1, 0.08, 0.014, porcelain, 0.95, shelfY + 0.022 + i * 0.016, back + 0.12, g);
     melodyToy(1.12, shelfY + 0.015, back + 0.12, 0, 0.45, g);
+  }
+
+  // ---------- the fridge, at the west end of the kitchen: round-edged and pink, lit inside ----------
+  {
+    const W = 0.72, D = 0.66, Hf = 1.72, t = 0.04, shell = paint(0xf7b6c8), white = paint(P.white);
+    const fg = group(7.55, 0, 0.01 + D / 2), cy = 0.06 + (Hf - 0.06) / 2;
+    box(W - 0.06, 0.06, D - 0.08, paint(0xe9e2da), 0, 0.03, -0.02, fg);                    // plinth
+    soft(W, Hf - 0.06, t, 0.012, shell, 0, cy, -D / 2 + t / 2, fg);                         // back
+    for (const s of [-1, 1]) soft(t, Hf - 0.06, D, 0.012, shell, s * (W / 2 - t / 2), cy, 0, fg);
+    soft(W, t, D, 0.012, shell, 0, 0.06 + t / 2, 0, fg);
+    soft(W, t, D, 0.012, shell, 0, Hf - t / 2, 0, fg);
+    // the inside: white walls that light up when the door opens (seen from within, so drawn back-faced)
+    const inside = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2e2, emissiveIntensity: 0, roughness: 0.6, side: THREE.BackSide });
+    const lining = add(new THREE.BoxGeometry(W - 2 * t, Hf - 0.06 - 2 * t, D - t), inside, 0, (0.06 + t + Hf - t) / 2, t / 2, fg);
+    lining.castShadow = lining.receiveShadow = false;
+    hideFromAO.push(lining);                     // its faces point the wrong way for the shading pass
+    for (const y of [0.58, 1.0, 1.36]) box(W - 2 * t - 0.01, 0.012, D - t - 0.08, mat(0xf4f8fb, null, { roughness: 0.1 }), 0, y, -0.02, fg);
+    // the door, hinged on the west side, a gold bar handle and a heart; a bottle in its rack
+    const hinge = group(W / 2, 0, D / 2, 0, fg);
+    soft(W, Hf - 0.06, 0.05, 0.02, shell, -W / 2, cy, 0.025, hinge);
+    soft(W - 0.1, Hf - 0.24, 0.012, 0.004, white, -W / 2, cy, -0.003, hinge);
+    soft(W - 0.14, 0.08, 0.07, 0.01, white, -W / 2, 0.92, -0.045, hinge);
+    cyl(0.03, 0.03, 0.2, mat(0xbfe6d6, null, { roughness: 0.15 }), -W / 2 - 0.12, 1.0, -0.045, hinge);
+    cyl(0.012, 0.012, 0.5, gold, -W + 0.07, Hf * 0.6, 0.085, hinge);
+    for (const dy of [-0.22, 0.22]) cyl(0.008, 0.008, 0.04, gold, -W + 0.07, Hf * 0.6 + dy, 0.065, hinge).rotation.x = Math.PI / 2;
+    add(new THREE.ShapeGeometry(heartShape(0.16), 24), paint(0xffffff), -W / 2, Hf - 0.32, 0.0505, hinge);
+    const fridge = switchable(fg, 'fridge', k => { hinge.rotation.y = k * 1.9; inside.emissiveIntensity = k * 0.3; }, { speed: 1.6, near: [hinge] });
+    // food to take out
+    const food = (name, x, y, z, build) => { const f = pickable(group(x, y, z, 0, fg), name, { inside: fridge, reach: 0.6 }); build(f); };
+    food('milk', -0.16, 1.006, -0.06, f => {
+      box(0.08, 0.18, 0.08, white, 0, 0.09, 0, f);
+      add(new THREE.CylinderGeometry(0, 0.06, 0.05, 4, 1).rotateY(Math.PI / 4), paint(0xf7a8c4), 0, 0.205, 0, f);
+    });
+    food('cake', 0.08, 0.586, -0.04, f => {
+      cyl(0.1, 0.1, 0.07, paint(0xf7a8c4), 0, 0.035, 0, f);
+      cyl(0.1, 0.1, 0.02, paint(0xfffafa), 0, 0.08, 0, f);
+      for (let i = 0; i < 5; i++) ball(0.016, mat(0xe0324d, null, { roughness: 0.35 }), Math.cos(i * 1.257) * 0.06, 0.1, Math.sin(i * 1.257) * 0.06, f);
+    });
+    food('juice', 0.15, 1.366, -0.06, f => {
+      cyl(0.035, 0.035, 0.17, mat(0xfbd27a, null, { roughness: 0.2 }), 0, 0.085, 0, f);
+      cyl(0.02, 0.02, 0.03, white, 0, 0.185, 0, f);
+    });
+    food('yogurt', -0.14, 0.1, 0.02, f => {
+      cyl(0.04, 0.032, 0.08, white, 0, 0.04, 0, f);
+      cyl(0.041, 0.041, 0.006, paint(0xd9c8f0), 0, 0.083, 0, f);
+    });
   }
 
   // ---------- dining (20): a table for four, chairs 16 to 19 ----------
@@ -1378,10 +1545,10 @@ export function buildScene(scene, renderer) {
     for (const [sx, sz, color] of [[-1, -1, P.pink], [-1, 1, 0xffffff], [1, -1, 0xffffff], [1, 1, P.pink]]) {
       const px = cx + sx * 0.24, pz = cz + sz * 0.33;
       box(0.26, 0.004, 0.34, paint(color === P.pink ? 0xffffff : P.pink), px, ty + 0.002, pz);
-      add(turn([[0, 0], [0.07, 0], [0.11, 0.012], [0.115, 0.016], [0.1, 0.014], [0, 0.006]]), porcelain, px, ty + 0.004, pz);
-      chair(cx + sx * 0.66, pz, sx < 0 ? Math.PI / 2 : -Math.PI / 2, color);
+      add(turn([[0, 0], [0.07, 0], [0.11, 0.012], [0.115, 0.016], [0.1, 0.014], [0, 0.006]]), porcelain, 0, 0, 0, pickable(group(px, ty + 0.004, pz), 'plate'));
+      pickable(chair(cx + sx * 0.66, pz, sx < 0 ? Math.PI / 2 : -Math.PI / 2, color), 'chair');
     }
-    const v = group(cx, ty, cz);
+    const v = pickable(group(cx, ty, cz), 'flowers');
     add(turn([[0, 0], [0.035, 0], [0.045, 0.05], [0.025, 0.11], [0.03, 0.13]]), mat(0xfbd3df, null, { roughness: 0.15 }), 0, 0, 0, v);
     [[0.0, 0.32, 0xf47aa0], [0.05, 0.28, 0xffffff], [-0.045, 0.27, 0xf7a8bd]].forEach(([dx, h, c]) => {
       cyl(0.004, 0.004, h - 0.1, leafGreen, dx / 2, 0.1 + (h - 0.1) / 2, 0, v).rotation.z = -dx * 2;
@@ -1408,19 +1575,19 @@ export function buildScene(scene, renderer) {
     slab(Wd, 0.2, L - 0.04, 0.06, [cream, cream], 0, 0.34, mid, g);
     const mt = 0.54;
     const duvet = add(pillowGeo(Wd + 0.08, L * 0.66, 0.12), mat(0xffffff, melodyBedTex), 0, mt + 0.045, z0 + L - L * 0.33 - 0.01, g);
-    const pillows = [-0.38, 0.38].map(x => {
-      const p = add(pillowGeo(0.66, 0.42, 0.16), mat(0xffffff, dotsTex('#ffffff', '#f7b9c8', 2)), x, mt + 0.07, z0 + 0.3, g);
+    for (const x of [-0.38, 0.38]) {
+      const pg = pickable(group(x, mt + 0.07, z0 + 0.3, 0, g), 'pillow');
+      const p = add(pillowGeo(0.66, 0.42, 0.16), mat(0xffffff, dotsTex('#ffffff', '#f7b9c8', 2)), 0, 0, 0, pg);
       p.rotation.x = 0.12;
-      return p;
-    });
+      fluff([p], { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [0.66, 0.42], parent: pg });
+    }
     fluff([duvet], { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [Wd, L * 0.66] });
-    fluff(pillows, { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [0.66, 0.42] });
     soft(Wd + 0.14, 0.03, 0.42, 0.012, mat(0xffffff, knitTex('#fbd3df', '#fde6ee', '#f2b3c6', 6, 2)), 0, mt + 0.115, z0 + L - 0.3, g);   // knit throw across the foot
     melodyToy(0.05, mt + 0.02, z0 + 0.62, 0, 1.0, g);
   }
   // 3: the bedside table and its lamp
   drawers(0.45, 0.55, 0.4, 2, 1, 0.24, 8.85, Math.PI / 2, paint(P.white), paint(P.pink));
-  tableLamp(0.24, 0.55, 8.85, 1.0);
+  tableLamp(0.24, 0.55, 8.85, 1.0, 'bedside lamp');
   // 4: the floor lamp, its cable running to a socket on the wall
   {
     const lx = 4.5, lz = 7.92, g = group(lx, 0, lz);
@@ -1429,7 +1596,8 @@ export function buildScene(scene, renderer) {
     const floorShade = shadeMat(0xf7b6c8), floorBulb = bulbMat();
     add(new THREE.CylinderGeometry(0.17, 0.22, 0.28, 48, 1, true), floorShade, 0, 1.5, 0, g);
     ball(0.04, floorBulb, 0, 1.44, 0, g);
-    lamp(lx, 1.42, lz, { hit: [0.24, 1.66], shades: [floorShade], bulb: floorBulb, power: 1.4 });
+    const fl = lamp(lx, 1.42, lz, { hit: [0.24, 1.66], shades: [floorShade], bulb: floorBulb, power: 1.4 });
+    fl.switch = switchable(g, 'floor lamp', k => setLamp(fl, k > 0.5), LIGHT);
     const wallX = XB - T / 2;
     flat(0.08, 0.08, paint(P.white), 0, 0, 0, group(wallX - 0.003, 0.3, lz + 0.18, -Math.PI / 2));
     const path = new THREE.CatmullRomCurve3([
@@ -1446,7 +1614,7 @@ export function buildScene(scene, renderer) {
     soft(0.5, 0.11, 0.48, 0.01, paint(P.white), 0.25, top - 0.08, 0, g);
     soft(0.46, 0.08, 0.02, 0.006, paint(P.pink), 0.25, top - 0.08, 0.245, g);
     ball(0.014, gold, 0.25, top - 0.08, 0.26, g);
-    const s = top + 0.018, lap = group(-0.05, s, 0.04, 0, g), alu = mat(0xf2c9d4, null, { metalness: 0.6, roughness: 0.35 });
+    const s = top + 0.018, lap = pickable(group(-0.05, s, 0.04, 0, g), 'laptop'), alu = mat(0xf2c9d4, null, { metalness: 0.6, roughness: 0.35 });
     soft(0.34, 0.016, 0.24, 0.006, alu, 0, 0.008, 0, lap);
     box(0.3, 0.002, 0.11, mat(0x3a3036, null, { roughness: 0.5 }), 0, 0.017, -0.04, lap);
     const lid = group(0, 0.016, -0.12, 0, lap);
@@ -1454,12 +1622,12 @@ export function buildScene(scene, renderer) {
     soft(0.34, 0.23, 0.012, 0.006, alu, 0, 0.115, 0, lid);
     flat(0.31, 0.2, mat(0x1b1d2a, null, { roughness: 0.15, emissive: 0x2a2f55, emissiveIntensity: 0.25 }), 0, 0.115, 0.0065, lid);
     add(new THREE.ShapeGeometry(heartShape(0.06), 16), paint(0xffffff), 0, 0.12, -0.0065, lid).rotation.y = Math.PI;
-    const cup = group(0.38, s, -0.12, 0, g);
+    const cup = pickable(group(0.38, s, -0.12, 0, g), 'pencil cup');
     cyl(0.04, 0.036, 0.1, paint(P.pink), 0, 0.05, 0, cup);
     [[0xffffff, 0.012, 0.012, 0.15], [0xfbe7a6, -0.012, 0.01, -0.1], [0xf7a8bd, 0.016, -0.006, 0.2]].forEach(([c, x, z, lean]) => {
       cyl(0.004, 0.004, 0.17, paint(c), x, 0.11, z, cup).rotation.set(lean, 0, -lean * 0.6);
     });
-    chair(XB - T / 2 - 0.85, 8.75, Math.PI / 2, P.white);
+    pickable(chair(XB - T / 2 - 0.85, 8.75, Math.PI / 2, P.white), 'chair');
   }
   {
     // a fluffy round rug by the bed, a print, and a plant by door 5
@@ -1468,7 +1636,7 @@ export function buildScene(scene, renderer) {
     rug.castShadow = false;
     fluff([rug], { length: 0.012, layers: 8, strand: 0.004, curl: 0.4, shade: 0.75, uvSize: [1.7, 1.7] });
     picture(melodyPosterTex, 0.5, 0.67, 0.035, paint(P.pink), group(2.0, 1.6, ZM + 0.006));
-    potPlant(0.4, 0, ZN - 0.38, 0.19, 0.34, mat(0xffffff, dotsTex('#ffffff', '#f4a6ba', 4, 2)), 15, 0.6, 0.22);
+    pickable(potPlant(0.4, 0, ZN - 0.38, 0.19, 0.34, mat(0xffffff, dotsTex('#ffffff', '#f4a6ba', 4, 2)), 15, 0.6, 0.22), 'plant');
   }
 
   // ---------- the big bathroom ----------
@@ -1505,9 +1673,10 @@ export function buildScene(scene, renderer) {
       new THREE.Vector3(0, top, -0.2), new THREE.Vector3(0, top + 0.3, -0.2), new THREE.Vector3(0, top + 0.34, -0.14), new THREE.Vector3(0, top + 0.28, -0.07),
     ]);
     add(new THREE.TubeGeometry(tap, 30, 0.012, 10), gold, 0, 0, 0, g);
-    soft(0.08, 0.035, 0.06, 0.012, paint(0xbfe6d6), -0.55, top + 0.0175, 0.02, g);          // the floss box
-    soft(0.082, 0.012, 0.062, 0.005, paint(P.white), -0.55, top + 0.04, 0.02, g);
-    const cup = group(0.55, top, 0.0, 0, g);                                                // the toothbrush cup
+    const floss = pickable(group(-0.55, top, 0.02, 0, g), 'floss box');
+    soft(0.08, 0.035, 0.06, 0.012, paint(0xbfe6d6), 0, 0.0175, 0, floss);
+    soft(0.082, 0.012, 0.062, 0.005, paint(P.white), 0, 0.04, 0, floss);
+    const cup = pickable(group(0.55, top, 0.0, 0, g), 'toothbrush cup');
     add(turn([[0, 0], [0.035, 0], [0.04, 0.1], [0.036, 0.1], [0.031, 0.006], [0, 0.006]], 32), paint(0xf7a8c4), 0, 0, 0, cup);
     [[0xffffff, 0.2], [0xbfe6d6, -0.25]].forEach(([c, lean], i) => {
       const b = group((i - 0.5) * 0.02, 0.02, 0, 0, cup);
@@ -1532,15 +1701,16 @@ export function buildScene(scene, renderer) {
       add(new THREE.ShapeGeometry(oval(0.05, 0.16), 24), paint(0xf7a8c4), s * 0.2, 0.5, 0.002, mg);
     }
     // a pair of wall lights either side of the mirror: the bathroom has no window, so these are its clickable lamp
-    const sconceShade = shadeMat(0xffffff, dotsTex('#ffffff', '#fbd3df', 3, 1)), sconceBulb = bulbMat();
+    const sconceShade = shadeMat(0xffffff, dotsTex('#ffffff', '#fbd3df', 3, 1)), sconceBulb = bulbMat(), sconces = group(0, 0, 0, 0, g);
     for (const s of [-1, 1]) {
-      const sc = group(s * 0.62, 1.62, -dep / 2 + 0.004, 0, g);
+      const sc = group(s * 0.62, 1.62, -dep / 2 + 0.004, 0, sconces);
       cyl(0.04, 0.04, 0.012, gold, 0, 0, 0.006, sc).rotation.x = Math.PI / 2;
       cyl(0.008, 0.008, 0.1, gold, 0, 0, 0.06, sc).rotation.x = Math.PI / 2;
       add(new THREE.CylinderGeometry(0.06, 0.085, 0.14, 32, 1, true), sconceShade, 0, 0.03, 0.11, sc);
       ball(0.025, sconceBulb, 0, 0.0, 0.11, sc);
     }
-    lamp((x0 + x1) / 2, 1.62, wallZ + 0.36, { hit: [0.3, 2.0], shades: [sconceShade], bulb: sconceBulb, power: 1.3, distance: 4.5 });
+    const bl = lamp((x0 + x1) / 2, 1.62, wallZ + 0.36, { hit: [0.3, 2.0], shades: [sconceShade], bulb: sconceBulb, power: 1.3, distance: 4.5 });
+    bl.switch = switchable(sconces, 'bathroom lights', k => setLamp(bl, k > 0.5), { ...LIGHT, reach: 0.9 });
   }
   // 15: the toilet room. A small basin on the wall with its tap on the wall side, the toilet
   // against the north wall facing south, and the paper holder with a roll on the side wall.
@@ -1603,19 +1773,16 @@ export function buildScene(scene, renderer) {
     cyl(0.12, 0.12, 0.02, chrome, cx, 2.05, z1 - 0.2);
     cyl(0.01, 0.01, 0.16, chrome, cx, 2.05, z1 - 0.11).rotation.x = Math.PI / 2;
     soft(0.28, 0.02, 0.1, 0.006, chrome, cx, 1.1, z1 - 0.05);
-    [[0xf7a8c4, 0.16], [0xffffff, 0.13], [0xfbe7a6, 0.18]].forEach(([c, h], i) => soft(0.06, h, 0.05, 0.02, paint(c), cx - 0.09 + i * 0.08, 1.11 + h / 2, z1 - 0.05));
+    [[0xf7a8c4, 0.16], [0xffffff, 0.13], [0xfbe7a6, 0.18]].forEach(([c, h], i) => soft(0.06, h, 0.05, 0.02, paint(c), 0, h / 2, 0, pickable(group(cx - 0.09 + i * 0.08, 1.11, z1 - 0.05), 'shampoo', { reach: 0.6 })));
   }
   // 13 and 12: the two walk-in closets along the west wall, each a rail of clothes and a mirror
   {
-    const garments = [0xf7b6c8, 0xffffff, 0xfbd3df, 0xd9c8f0, 0xfbe7a6, 0xf48fb1, 0xc6e2f5, 0xfde6ee];
     const rail = (x0, x1, z) => {
       const r = cyl(0.012, 0.012, x1 - x0, gold, (x0 + x1) / 2, 1.8, z);
       r.rotation.z = Math.PI / 2;
       let x = x0 + 0.08, i = 0;
       while (x < x1 - 0.06) {
-        const len = 0.7 + rand() * 0.35, c = garments[i % garments.length];
-        add(new THREE.TorusGeometry(0.018, 0.003, 6, 16, Math.PI), gold, x, 1.795, z).rotation.y = Math.PI / 2;
-        soft(0.035, len, 0.44, 0.015, paint(c), x, 1.76 - len / 2, z, root);
+        garment(garmentColors[i % garmentColors.length], 0.7 + rand() * 0.35, 0.44, x, 1.795, z, root);
         x += 0.065 + rand() * 0.035; i++;
       }
     };
@@ -1632,8 +1799,9 @@ export function buildScene(scene, renderer) {
     flat(0.62, 1.62, gold, 0, 0, 0, rm);
     flat(0.56, 1.56, mirrorMat, 0, 0, 0.003, rm);
     // a fluffy pouf in the first closet, to sit and put shoes on
-    const pouf = add(new THREE.CylinderGeometry(0.24, 0.24, 0.38, 40), velvet(0xf7b6c8), 8.55, 0.19, 6.85);
-    fluff([pouf], { length: 0.012, layers: 8, strand: 0.004, curl: 0.4, shade: 0.75 });
+    const pg = pickable(group(8.55, 0.19, 6.85), 'pouf');
+    const pouf = add(new THREE.CylinderGeometry(0.24, 0.24, 0.38, 40), velvet(0xf7b6c8), 0, 0, 0, pg);
+    fluff([pouf], { length: 0.012, layers: 8, strand: 0.004, curl: 0.4, shade: 0.75, parent: pg });
   }
 
   // ---------- the little hall between door 5 and the kids' room ----------
@@ -1642,7 +1810,7 @@ export function buildScene(scene, renderer) {
     const hooks = group(XH2 + 0.004, 1.6, (ZN + ZH2) / 2, Math.PI / 2);
     soft(0.6, 0.08, 0.02, 0.01, paint(P.white), 0, 0, 0.01, hooks);
     for (const x of [-0.2, 0, 0.2]) ball(0.022, gold, x, -0.01, 0.045, hooks);
-    soft(0.26, 0.3, 0.1, 0.05, paint(0xf7a8c4), -0.2, -0.2, 0.08, hooks);     // a little backpack
+    soft(0.26, 0.3, 0.1, 0.05, paint(0xf7a8c4), 0, 0, 0, pickable(group(-0.2, -0.2, 0.08, 0, hooks), 'backpack'));     // a little backpack
   }
 
   // ---------- the kids' room ----------
@@ -1652,8 +1820,8 @@ export function buildScene(scene, renderer) {
     soft(1.3, 0.035, 0.52, 0.012, paint(P.white), 0, top, 0, g);
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(0.022, 0.018, top - 0.02, paint(P.pink), sx * 0.6, (top - 0.02) / 2, sz * 0.2, g);
     const s = top + 0.018;
-    soft(0.3, 0.012, 0.22, 0.004, paint(0xffffff), -0.15, s + 0.006, 0.08, g).rotation.y = 0.15;
-    const cup = group(0.15, s, -0.1, 0, g);
+    soft(0.3, 0.012, 0.22, 0.004, paint(0xffffff), 0, 0, 0, pickable(group(-0.15, s + 0.006, 0.08, 0.15, g), 'sketchbook'));
+    const cup = pickable(group(0.15, s, -0.1, 0, g), 'crayons');
     cyl(0.04, 0.036, 0.09, paint(0xbfe6d6), 0, 0.045, 0, cup);
     [[0xf47aa0, 0.01, 0.01, 0.12], [0xfbe7a6, -0.012, 0.008, -0.14], [0xc6e2f5, 0.0, -0.014, 0.05], [0xd9c8f0, 0.016, -0.006, 0.2]].forEach(([c, x, z, lean]) => {
       cyl(0.005, 0.005, 0.13, paint(c), x, 0.09, z, cup).rotation.set(lean, 0, -lean * 0.6);
@@ -1669,8 +1837,9 @@ export function buildScene(scene, renderer) {
     ball(0.022, deskBulb, -0.27, 0.33, 0, dl);
     dl.updateWorldMatrix(true, false);
     const glowAt = root.worldToLocal(dl.localToWorld(new THREE.Vector3(-0.27, 0.3, 0)));
-    lamp(glowAt.x, glowAt.y, glowAt.z, { hit: [0.2, s + 0.5], shades: [deskShade], bulb: deskBulb, power: 0.6, distance: 3 });
-    chair(6.7, wallZ + 0.85, Math.PI, P.pink, 0.8);
+    const dlamp = lamp(glowAt.x, glowAt.y, glowAt.z, { hit: [0.2, s + 0.5], shades: [deskShade], bulb: deskBulb, power: 0.6, distance: 3 });
+    dlamp.switch = switchable(dl, 'desk lamp', k => setLamp(dlamp, k > 0.5), LIGHT);
+    pickable(chair(6.7, wallZ + 0.85, Math.PI, P.pink, 0.8), 'chair');
     picture(melodyPosterTex, 0.6, 0.8, 0.04, paint(P.white), group(6.7, 1.6, wallZ + 0.006));
   }
   // 9: the bunk bed against the west wall, pillows at the south end, ladder at the north end
@@ -1685,12 +1854,13 @@ export function buildScene(scene, renderer) {
       slab(bw - 0.04, 0.15, bl - 0.04, 0.05, [cream, cream], 0, y0 + 0.035, 0, g);
       const mt = y0 + 0.185;
       bedding.push(add(pillowGeo(bw + 0.02, bl * 0.66, 0.11), mat(0xffffff, melodyBedTex), 0, mt + 0.04, bl / 2 - bl * 0.33 - 0.02, g));
-      pillows.push(add(pillowGeo(0.6, 0.36, 0.14), mat(0xffffff, dotsTex('#ffffff', '#f7b9c8', 2)), 0, mt + 0.06, -bl / 2 + 0.26, g));
+      const pg = pickable(group(0, mt + 0.06, -bl / 2 + 0.26, 0, g), 'pillow');
+      pillows.push([add(pillowGeo(0.6, 0.36, 0.14), mat(0xffffff, dotsTex('#ffffff', '#f7b9c8', 2)), 0, 0, 0, pg), pg]);
       melodyToy(-0.12, mt + 0.02, -bl / 2 + 0.58, -Math.PI / 2 + 0.3, k, g);
       for (const sz of [-1, 1]) soft(bw, 0.42, 0.03, 0.012, accent, 0, y0 + 0.3, sz * (bl / 2 + 0.02), g);   // pink end boards
     }
     fluff(bedding, { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [bw, bl * 0.66] });
-    fluff(pillows, { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [0.6, 0.36] });
+    for (const [p, pg] of pillows) fluff([p], { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [0.6, 0.36], parent: pg });
     // guard rails round the top bunk, open on the east side at the ladder
     const railY = 1.72, ex = -(bw / 2 + 0.02);
     soft(0.04, 0.05, bl, 0.01, frame, -ex, railY, 0, g);
@@ -1718,9 +1888,40 @@ export function buildScene(scene, renderer) {
   scene.updateMatrixWorld(true);
   {
     const special = new Set(hideFromAO), buckets = new Map();
+    // Live things are tidied too, without losing their moving parts. A thing she can
+    // carry is rigid, so all of it folds into a few meshes in its own space; a thing
+    // that opens folds only the pieces that share a parent (a door's panels, say).
+    // Anything live inside another live thing (clothes in a wardrobe) is its own.
+    const fold = (meshes, into, place) => {
+      if (meshes.length < 2) return;
+      const parts = meshes.map(m => {
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+        for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+        return g.applyMatrix4(place(m));
+      });
+      const merged = new THREE.Mesh(mergeGeometries(parts), meshes[0].material);
+      merged.castShadow = meshes[0].castShadow;
+      merged.receiveShadow = true;
+      into.add(merged);
+      meshes.forEach(m => m.removeFromParent());
+    };
+    for (const it of interactables) {
+      const inv = it.obj.matrixWorld.clone().invert(), groups = new Map();
+      it.obj.traverse(o => {
+        if (!o.isMesh || o.isInstancedMesh || Array.isArray(o.material) || special.has(o)) return;
+        for (let p = o.parent; p !== it.obj; p = p.parent) if (live.has(p)) return;
+        const home = it.kind === 'pick' ? it.obj : o.parent;
+        const key = `${home.uuid}|${o.material.uuid}|${o.castShadow}`;
+        if (!groups.has(key)) groups.set(key, { home, meshes: [] });
+        groups.get(key).meshes.push(o);
+      });
+      for (const { home, meshes } of groups.values()) {
+        fold(meshes, home, it.kind === 'pick' ? m => inv.clone().multiply(m.matrixWorld) : m => m.matrix);
+      }
+    }
     scene.traverse(o => {
       if (!o.isMesh || o.isInstancedMesh || Array.isArray(o.material) || o.renderOrder !== 0 || windCurtains.includes(o)) return;
-      for (let p = o; p; p = p.parent) if (special.has(p)) return;
+      for (let p = o; p; p = p.parent) if (special.has(p) || live.has(p)) return;
       const key = `${o.material.uuid}|${o.castShadow}|${o.receiveShadow}`;
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(o);
@@ -1741,7 +1942,8 @@ export function buildScene(scene, renderer) {
     }
   }
   scene.updateMatrixWorld(true);
-  scene.traverse(o => { o.matrixAutoUpdate = false; });
+  const freeze = o => { if (live.has(o)) return; o.matrixAutoUpdate = false; o.children.forEach(freeze); };
+  freeze(scene);
 
   // The beams of light in the air are worked out in the pipeline by walking each
   // view ray through the home and asking, step by step, "can this point see the
@@ -1800,7 +2002,7 @@ export function buildScene(scene, renderer) {
     renderer.autoClear = false;                                // then the blowing curtains, with their motion
     for (const c of windCurtains) {
       const own = c.material;
-      c.material = blownMask;
+      c.material = c.userData.mask;
       renderer.render(c, sunCam);
       c.material = own;
     }
@@ -1849,8 +2051,24 @@ export function buildScene(scene, renderer) {
     return 0.55 + 0.45 * Math.sin(seconds * 0.6) * Math.sin(seconds * 0.23 + 1.3);
   }
 
+  // Eases every door, window, wardrobe and switch towards its state. Returns the
+  // ones that finished moving this frame (so the squirrel's map can be redrawn).
+  function update(dt) {
+    const settled = [];
+    for (const it of interactables) {
+      if (it.kind !== 'switch') continue;
+      const goal = it.on ? 1 : 0;
+      if (it.k === goal) continue;
+      it.k = goal > it.k ? Math.min(goal, it.k + dt * it.speed) : Math.max(goal, it.k - dt * it.speed);
+      it.apply(it.k * it.k * (3 - 2 * it.k));
+      if (it.k === goal) settled.push(it);
+    }
+    tvShow.tick(dt);
+    return settled;
+  }
+
   setSun(SUNRISE.start);
   renderSunDepth();
 
-  return { hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp };
+  return { hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update };
 }

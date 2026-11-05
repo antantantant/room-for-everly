@@ -68,44 +68,96 @@ function ellipse(g, P, u, x, y, rx, ry, rot = 0) {
   g.ellipse(cx, cy, rx * u, ry * u, rot, 0, Math.PI * 2);
 }
 
-function face(g, P, u) {
-  // the cream mask: a lobe round each eye, dipping to a point between them, and a full muzzle and chin
-  g.fillStyle = C.cream;
-  g.beginPath();
-  for (const s of [-1, 1]) { g.moveTo(...P(s * 0.38 + 0.42, 0.04)); ellipse(g, P, u, s * 0.38, 0.04, 0.42, 0.44); }
-  g.moveTo(...P(0.64, -0.36));
-  ellipse(g, P, u, 0, -0.36, 0.64, 0.56);
-  g.fill();
+// Her face for each feeling. `mood` is one of FEELINGS (or 'blink': neutral, eyes shut).
+export const FEELINGS = ['happy', 'sad', 'angry', 'bored', 'sleepy'];
+function face(mood) {
+  return (g, P, u) => {
+    const line = (w, color = C.eye) => { g.strokeStyle = color; g.lineWidth = u * w; g.lineCap = 'round'; g.lineJoin = 'round'; };
+    const curve = (x0, y0, cx, cy, x1, y1) => { g.beginPath(); g.moveTo(...P(x0, y0)); g.quadraticCurveTo(...P(cx, cy), ...P(x1, y1)); g.stroke(); };
 
-  // rosy cheeks
-  g.save();
-  g.filter = `blur(${u * 0.03}px)`;
-  g.fillStyle = C.blush;
-  for (const s of [-1, 1]) { g.beginPath(); ellipse(g, P, u, s * 0.58, -0.2, 0.13, 0.08); g.fill(); }
-  g.restore();
+    // the cream mask: a lobe round each eye, dipping to a point between them, and a full muzzle and chin
+    g.fillStyle = C.cream;
+    g.beginPath();
+    for (const s of [-1, 1]) { g.moveTo(...P(s * 0.38 + 0.42, 0.04)); ellipse(g, P, u, s * 0.38, 0.04, 0.42, 0.44); }
+    g.moveTo(...P(0.64, -0.36));
+    ellipse(g, P, u, 0, -0.36, 0.64, 0.56);
+    g.fill();
 
-  // eyes: tall glossy ovals
-  for (const s of [-1, 1]) {
-    const ex = s * 0.34, ey = 0.02;
-    g.fillStyle = C.eye;
-    g.beginPath(); ellipse(g, P, u, ex, ey, 0.105, 0.14, s * 0.12); g.fill();
-    g.fillStyle = '#ffffff';
-    g.beginPath(); ellipse(g, P, u, ex - s * 0.03, ey + 0.055, 0.04, 0.045); g.fill();
-    g.beginPath(); ellipse(g, P, u, ex + s * 0.035, ey - 0.06, 0.018, 0.018); g.fill();
-  }
+    // cheeks: rosy, rosier when happy, red when cross, pale when sad
+    g.save();
+    g.filter = `blur(${u * 0.03}px)`;
+    g.fillStyle = { happy: 'rgba(244, 110, 130, 0.65)', angry: 'rgba(232, 70, 70, 0.6)', sad: 'rgba(244, 128, 140, 0.25)' }[mood] || C.blush;
+    for (const s of [-1, 1]) { g.beginPath(); ellipse(g, P, u, s * 0.58, -0.2, 0.13, 0.08); g.fill(); }
+    g.restore();
 
-  // the nose, between and a little below the eyes, and a small happy mouth
-  g.fillStyle = C.nose;
-  g.beginPath(); ellipse(g, P, u, 0, -0.13, 0.07, 0.048); g.fill();
-  g.fillStyle = 'rgba(255,255,255,0.7)';
-  g.beginPath(); ellipse(g, P, u, -0.02, -0.115, 0.022, 0.013); g.fill();
-  g.strokeStyle = C.nose;
-  g.lineWidth = u * 0.022;
-  g.beginPath();
-  g.moveTo(...P(-0.085, -0.25));
-  g.quadraticCurveTo(...P(-0.04, -0.31), ...P(0, -0.25));
-  g.quadraticCurveTo(...P(0.04, -0.31), ...P(0.085, -0.25));
-  g.stroke();
+    for (const s of [-1, 1]) {
+      const ex = s * 0.34, ey = 0.02;
+      const glossy = (rx = 0.105, ry = 0.14) => {
+        g.fillStyle = C.eye;
+        g.beginPath(); ellipse(g, P, u, ex, ey, rx, ry, s * 0.12); g.fill();
+        g.fillStyle = '#ffffff';
+        g.beginPath(); ellipse(g, P, u, ex - s * 0.03, ey + 0.055 * ry / 0.14, 0.04 * rx / 0.105, 0.045 * ry / 0.14); g.fill();
+        g.beginPath(); ellipse(g, P, u, ex + s * 0.035, ey - 0.06 * ry / 0.14, 0.018, 0.018); g.fill();
+      };
+      if (mood === 'happy') {                     // smiling eyes: ^ ^
+        line(0.032); curve(ex - 0.1, ey - 0.05, ex, ey + 0.13, ex + 0.1, ey - 0.05);
+      } else if (mood === 'sleepy' || mood === 'blink') {   // shut, relaxed
+        line(0.03); curve(ex - 0.095, ey + 0.01, ex, ey - 0.07, ex + 0.095, ey + 0.01);
+      } else if (mood === 'sad') {                // big wet eyes under worried brows
+        glossy(0.1, 0.14);
+        g.fillStyle = 'rgba(255,255,255,0.85)';
+        g.beginPath(); ellipse(g, P, u, ex, ey - 0.07, 0.07, 0.025); g.fill();
+        line(0.026); curve(s * 0.17, ey + 0.25, s * 0.3, ey + 0.27, s * 0.45, ey + 0.19);
+      } else if (mood === 'angry') {              // the inner top of each eye cut off by a scowl
+        glossy(0.095, 0.12);
+        g.fillStyle = C.cream;
+        g.beginPath(); g.moveTo(...P(s * 0.2, ey + 0.16)); g.lineTo(...P(s * 0.5, ey + 0.2)); g.lineTo(...P(s * 0.2, ey - 0.0)); g.closePath(); g.fill();
+        line(0.034); g.beginPath(); g.moveTo(...P(s * 0.18, ey + 0.08)); g.lineTo(...P(s * 0.47, ey + 0.2)); g.stroke();
+      } else if (mood === 'bored') {              // heavy lids halfway down: only the lower half of each eye shows
+        g.save();
+        g.beginPath(); g.rect(...P(ex - 0.2, ey + 0.012), 0.4 * u, 0.4 * u); g.clip();
+        glossy(0.105, 0.14);
+        g.restore();
+        line(0.028); g.beginPath(); g.moveTo(...P(ex - 0.11, ey + 0.012)); g.lineTo(...P(ex + 0.11, ey + 0.012)); g.stroke();
+      } else {
+        glossy();
+      }
+    }
+
+    // the nose, between and a little below the eyes
+    g.fillStyle = C.nose;
+    g.beginPath(); ellipse(g, P, u, 0, -0.13, 0.07, 0.048); g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.7)';
+    g.beginPath(); ellipse(g, P, u, -0.02, -0.115, 0.022, 0.013); g.fill();
+
+    // the mouth
+    line(0.022, C.nose);
+    if (mood === 'happy') {                       // wide open, a pink tongue
+      g.fillStyle = '#7a2f2a';
+      g.beginPath(); g.moveTo(...P(-0.12, -0.22)); g.quadraticCurveTo(...P(0, -0.46), ...P(0.12, -0.22)); g.closePath(); g.fill();
+      g.fillStyle = '#f48a9a';
+      g.beginPath(); ellipse(g, P, u, 0, -0.3, 0.055, 0.035); g.fill();
+    } else if (mood === 'sad') {
+      curve(-0.08, -0.31, 0, -0.22, 0.08, -0.31);
+      g.fillStyle = 'rgba(150, 200, 245, 0.9)';     // a tear on her cheek
+      g.beginPath(); g.moveTo(...P(0.42, -0.1)); g.quadraticCurveTo(...P(0.37, -0.2), ...P(0.42, -0.22)); g.quadraticCurveTo(...P(0.47, -0.2), ...P(0.42, -0.1)); g.fill();
+    } else if (mood === 'angry') {
+      g.beginPath(); g.moveTo(...P(-0.09, -0.3)); g.lineTo(...P(-0.045, -0.26)); g.lineTo(...P(0, -0.3)); g.lineTo(...P(0.045, -0.26)); g.lineTo(...P(0.09, -0.3)); g.stroke();
+      line(0.03, '#e2384a');                         // the cross mark on her forehead
+      for (const [a, b] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) curve(-0.5 + a * 0.02, 0.62 + b * 0.09, -0.5 + a * 0.02, 0.62 + b * 0.02, -0.5 + a * 0.09, 0.62 + b * 0.02);
+    } else if (mood === 'bored') {
+      g.beginPath(); g.moveTo(...P(-0.07, -0.27)); g.lineTo(...P(0.07, -0.27)); g.stroke();
+    } else if (mood === 'sleepy') {                // a little round snore
+      g.fillStyle = '#7a2f2a';
+      g.beginPath(); ellipse(g, P, u, 0, -0.28, 0.035, 0.04); g.fill();
+    } else {
+      g.beginPath();
+      g.moveTo(...P(-0.085, -0.25));
+      g.quadraticCurveTo(...P(-0.04, -0.31), ...P(0, -0.25));
+      g.quadraticCurveTo(...P(0.04, -0.31), ...P(0.085, -0.25));
+      g.stroke();
+    }
+  };
 }
 
 // The back of the dress: a white cross, two ribbons crossing between the shoulders and the waist.
@@ -208,8 +260,22 @@ export function createSquirrel() {
 
   // head: a big round head with the face painted on, and round ears with cream insides
   const head = pivot(g, 0, 0.47, 0);
-  const skull = mesh(ball(1, 96, 64), soft(null, projected(C.fur, face, null)), head, 0, 0.2, 0.01);
+  // one painted face per feeling, swapped in by setFace()
+  const faces = Object.fromEntries(['neutral', 'blink', ...FEELINGS].map(m => [m, projected(C.fur, face(m), null)]));
+  const skull = mesh(ball(1, 96, 64), soft(null, faces.neutral), head, 0, 0.2, 0.01);
   skull.scale.set(0.25, 0.215, 0.22);
+  const setFace = name => { skull.material.map = faces[name] || faces.neutral; };
+
+  // little Zs that drift up from her head while she is sleepy
+  const zc = canvas(64, 64), zg = zc.getContext('2d');
+  zg.font = 'bold 54px system-ui, sans-serif'; zg.textAlign = 'center'; zg.textBaseline = 'middle';
+  zg.lineWidth = 8; zg.strokeStyle = '#ffffff'; zg.strokeText('Z', 32, 34);
+  zg.fillStyle = '#8a7fd6'; zg.fillText('Z', 32, 34);
+  const zMat = new THREE.SpriteMaterial({ map: toTexture(zc), transparent: true, depthWrite: false });
+  const zzz = new THREE.Group();
+  for (let i = 0; i < 3; i++) zzz.add(new THREE.Sprite(zMat.clone()));
+  zzz.visible = false;
+  head.add(zzz);
   for (const s of [-1, 1]) {
     const ear = pivot(head, s * 0.165, 0.39, -0.03);
     ear.rotation.z = -s * 0.4;
@@ -249,5 +315,5 @@ export function createSquirrel() {
     mesh(ball(radius(1), 24, 16), tailMat, tail, tip.x, tip.y, tip.z);
   }
 
-  return { group: g, parts: { head, armL: arms[1], armR: arms[0], legL: legs[1], legR: legs[0], tail } };
+  return { group: g, parts: { head, armL: arms[1], armR: arms[0], legL: legs[1], legR: legs[0], tail, zzz }, setFace };
 }
