@@ -1235,7 +1235,7 @@ export function buildScene(scene, renderer) {
     }
   }
   doorLeaf(HALL_DOOR[0] + 0.02, ZM + T / 2, HALL_DOOR[1] - HALL_DOOR[0] - 0.02, -Math.PI / 2 + 0.12);   // swung into the bedroom
-  doorLeaf(DOOR5[0] + 0.02, ZN - T / 2, DOOR5[1] - DOOR5[0] - 0.02, Math.PI / 2 - 0.12);               // door 5, also into the bedroom
+  doorLeaf(DOOR5[1] - 0.02, ZN - T / 2, DOOR5[1] - DOOR5[0] - 0.02, Math.PI / 2 + 0.12);               // door 5, also into the bedroom, hung on its west side so it folds back beside the desk and leaves the way in clear
   doorLeaf(XB + T / 2, KIDS_DOOR[0] + 0.02, KIDS_DOOR[1] - KIDS_DOOR[0] - 0.02, -0.12);                // into the kids' room
 
   // a table lamp: a pink gourd base and a dotty shade

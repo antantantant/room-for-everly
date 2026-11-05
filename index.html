@@ -29,8 +29,8 @@
 <body>
 <div id="label">
   <h1>Room for Everly</h1>
-  <p>Drag to rotate · scroll to zoom · click a lamp to switch it on · every window faces east</p>
-  <button data-view="overview">Overview</button><button data-view="living">Living room</button><button data-view="bedroom">Bedroom</button><button data-view="bathroom">Bathroom</button><button data-view="kids">Kids' room</button><button data-view="plan">Floor plan</button>
+  <p>Arrow keys walk the squirrel · drag to rotate · scroll to zoom · click a lamp to switch it on</p>
+  <button data-view="overview">Overview</button><button data-view="living">Living room</button><button data-view="bedroom">Bedroom</button><button data-view="bathroom">Bathroom</button><button data-view="kids">Kids' room</button><button data-view="plan">Floor plan</button><button data-view="squirrel">Squirrel</button>
 </div>
 <div id="transport" hidden>
   <span id="clock"></span>
@@ -44,9 +44,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bump ?v= whenever src/ changes: it stops a browser pairing this page with an older cached module.
-import { createPipeline } from './src/pipeline.js?v=1';
-import { buildScene, views, SUNRISE } from './src/scene.js?v=1';
-import { createMusic } from './src/audio.js?v=1';
+import { createPipeline } from './src/pipeline.js?v=2';
+import { buildScene, views, SUNRISE } from './src/scene.js?v=2';
+import { createMusic } from './src/audio.js?v=2';
+import { createSquirrel } from './src/squirrel.js?v=2';
+import { createWalker } from './src/walk.js?v=2';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);
@@ -54,6 +56,13 @@ const pipeline = createPipeline(scene, camera);
 const room = buildScene(scene, pipeline.renderer);
 const music = createMusic();
 pipeline.hideFromAO.push(...room.hideFromAO);
+
+// Everly's squirrel, standing on the round rug in the kids' room, turned towards the door
+const squirrel = createSquirrel();
+squirrel.group.position.set(6.9 - 4.7, 0.014, 12.15 - 6.8);
+squirrel.group.rotation.y = -0.93;
+scene.add(squirrel.group);
+window.__squirrel = squirrel;
 
 const controls = new OrbitControls(camera, pipeline.renderer.domElement);
 controls.enableDamping = true;
@@ -80,8 +89,27 @@ canvas.addEventListener('pointerup', e => {
 canvas.addEventListener('pointermove', e => { if (!e.buttons) canvas.style.cursor = lampUnder(e) ? 'pointer' : ''; });
 window.__lamps = () => room.lamps.map(l => l.on);   // console helper: which lamps are on
 
+// The arrow keys walk the squirrel; the camera follows her.
+const walker = createWalker({
+  squirrel, scene, renderer: pipeline.renderer, camera, controls,
+  hidden: [...pipeline.hideFromAO, ...room.lamps.map(l => l.proxy)],
+});
+window.__walker = walker;   // console helper: __walker.isFree(x, z) says whether she fits there
+
+// Behind the squirrel, looking the way she faces, so the up arrow walks her straight on.
+// If furniture or a wall is in the way there, swing round her until the view is clear.
+function squirrelView() {
+  const s = squirrel.group.position, a0 = squirrel.group.rotation.y;
+  for (const turn of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 2.6, -2.6, Math.PI]) {
+    for (const d of [2.1, 1.6, 1.2]) {
+      const a = a0 + turn, ok = [1, 0.75, 0.5].every(f => walker.isFree(s.x - Math.sin(a) * d * f, s.z - Math.cos(a) * d * f, 0.12));
+      if (ok) return [[s.x - Math.sin(a) * d, 1.45, s.z - Math.cos(a) * d], [s.x, 0.5, s.z]];
+    }
+  }
+  return [[s.x, 3, s.z + 0.01], [s.x, 0.5, s.z]];
+}
 function setView(name, custom) {
-  const [p, t] = custom || views[name];
+  const [p, t] = custom || (name === 'squirrel' ? squirrelView() : views[name]);
   camera.position.set(...p);
   controls.target.set(...t);
   controls.update();
@@ -139,10 +167,16 @@ document.querySelectorAll('[data-speed]').forEach(b => b.onclick = () => setSpee
 let soundOn = true;
 $('sound').onclick = () => { soundOn = !soundOn; music.setMuted(!soundOn); $('sound').textContent = soundOn ? 'Sound on' : 'Sound off'; };
 
+let frame = 0;
 pipeline.start(() => {
-  controls.update();
   const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  // The squirrel is always a little alive (her tail waves), so every frame is drawn;
+  // her shadow is redrawn every other frame.
+  walker.update(dt);
+  controls.update();
+  if (frame++ % 2) pipeline.renderer.shadowMap.needsUpdate = true;
+  pipeline.invalidate();
   if (!playing) return;                       // paused: nothing moves, so the pipeline goes back to idling
   minutes = Math.min(SUNRISE.end, minutes + dt * speed / 60);
   breeze += dt;

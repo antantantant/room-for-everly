@@ -15,6 +15,14 @@ East is the left of the sketch, so every window faces the sunrise:
 
 The parts of the sketch marked "not in" are left open, like courtyards.
 
+## Everly's squirrel
+
+A squirrel in a pink dress, from Everly's front and back drawings, made in the soft, round style of Animal Crossing. She lives in the kids' room.
+
+- **Walk her with the arrow keys** (or W A S D). Up walks away from you and left walks to the screen's left, whichever way you are looking. The camera follows her.
+- She swings her arms and feet as she walks, and her tail waves all the time.
+- She walks round furniture and through doorways but not through walls. The **Squirrel** button jumps to a view just behind her.
+
 ## Things to try
 
 - Press **Begin the sunrise**. It starts one minute before the sun comes up, with music, and the living-room window is open to the breeze.
