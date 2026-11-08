@@ -33,7 +33,7 @@
 <body>
 <div id="label">
   <h1>Room for Everly</h1>
-  <p>Arrow keys walk the squirrel · Space picks up, puts down, opens and switches · drag to rotate · scroll to zoom</p>
+  <p>Arrow keys walk the squirrel · Space picks up, puts down, opens and switches · L puts back what she moved · drag to rotate · scroll to zoom</p>
   <button data-view="overview">Overview</button><button data-view="living">Living room</button><button data-view="bedroom">Bedroom</button><button data-view="bathroom">Bathroom</button><button data-view="kids">Kids' room</button><button data-view="plan">Floor plan</button><button data-view="squirrel">Squirrel</button>
   <div id="feelings"><span>Feelings (1–5)</span><button data-feel="happy">😊 Happy</button><button data-feel="sad">😢 Sad</button><button data-feel="angry">😠 Angry</button><button data-feel="bored">😑 Bored</button><button data-feel="sleepy">😴 Sleepy</button></div>
 </div>
@@ -50,13 +50,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bump ?v= whenever src/ changes: it stops a browser pairing this page with an older cached module.
-import { createPipeline } from './src/pipeline.js?v=3';
-import { buildScene, views, SUNRISE } from './src/scene.js?v=3';
-import { createMusic } from './src/audio.js?v=3';
-import { createSquirrel } from './src/squirrel.js?v=3';
-import { createWalker } from './src/walk.js?v=3';
-import { createFeelings } from './src/feelings.js?v=3';
-import { createInteraction } from './src/interact.js?v=3';
+import { createPipeline } from './src/pipeline.js?v=4';
+import { buildScene, views, SUNRISE } from './src/scene.js?v=4';
+import { createMusic } from './src/audio.js?v=4';
+import { createSquirrel } from './src/squirrel.js?v=4';
+import { createWalker } from './src/walk.js?v=4';
+import { createFeelings } from './src/feelings.js?v=4';
+import { createInteraction } from './src/interact.js?v=4';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);

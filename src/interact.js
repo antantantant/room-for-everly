@@ -4,7 +4,8 @@
 // and named in a label; Space uses it. Small things are carried in front of her,
 // big ones (chairs, plants, the pouf) over her head. Space again puts what she is
 // carrying down in front of her: on a table or counter if there is a flat top
-// there, otherwise on the floor.
+// there, otherwise on the floor. L sends the thing she moved last back to where
+// it started (press it again for the one before, and so on).
 import * as THREE from 'three';
 
 const HOLD_FRONT = new THREE.Vector3(0, 0.3, 0.2);   // hands, held out in front
@@ -17,7 +18,7 @@ export function createInteraction({ room, squirrel, walker, scene, camera, pipel
   const items = room.interactables;
   const boxes = new Map();
   let current = null, held = null, carry = null, outlined = null;
-  const tweens = [];
+  const tweens = [], moved = [];    // things she has moved, the latest last
 
   // world-space bounds of the parts she must get close to, kept until the thing moves
   const partsOf = it => {
@@ -57,6 +58,10 @@ export function createInteraction({ room, squirrel, walker, scene, camera, pipel
   function pickUp(it) {
     held = it;
     const obj = it.obj, q = upright(it), box = localBounds(obj, q), size = box.getSize(new THREE.Vector3());
+    // remember where it lives, the first time she moves it
+    it.home ||= { parent: obj.parent, position: obj.position.clone(), quaternion: obj.quaternion.clone(), world: obj.matrixWorld.clone() };
+    if (moved.includes(it)) moved.splice(moved.indexOf(it), 1);
+    moved.push(it);
     carry = !it.lay && (size.y > BIG.tall || Math.max(size.x, size.z) > BIG.wide) ? 'over' : 'front';
     holder.attach(obj);
     const c = box.getCenter(new THREE.Vector3());
@@ -90,6 +95,24 @@ export function createInteraction({ room, squirrel, walker, scene, camera, pipel
     if (it.plush) feelings.event('plush-down');
   }
 
+  // L: the thing she moved last glides back to where it lives, even out of her hands
+  function sendBack() {
+    const it = moved.pop();
+    if (!it) return;
+    const obj = it.obj, home = it.home;
+    if (held === it) { held = null; carry = null; }
+    scene.attach(obj);
+    const p = new THREE.Vector3(), q = new THREE.Quaternion();
+    home.world.decompose(p, q, new THREE.Vector3());
+    glide(obj, p, q, 0.6, () => {
+      home.parent.add(obj);
+      obj.position.copy(home.position);
+      obj.quaternion.copy(home.quaternion);
+      it.dirty = true;
+      walker.refresh();
+    });
+  }
+
   function use(it) {
     it.on = !it.on;
     const light = it.verbs[0] === 'turn on';
@@ -99,6 +122,7 @@ export function createInteraction({ room, squirrel, walker, scene, camera, pipel
   }
 
   addEventListener('keydown', e => {
+    if (e.code === 'KeyL' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) { if (!tweens.length) sendBack(); return; }
     if (e.code !== 'Space' || e.repeat) return;
     e.preventDefault();
     if (held) { if (!tweens.length) putDown(); }
