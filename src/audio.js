@@ -1,22 +1,28 @@
 // The sound of the room at dawn, synthesised live with Web Audio: no audio files.
 //
-// A gentle four-chord piece in F major that fills in as the sun comes up:
-// a soft pad from the start, a music-box arpeggio once there is a little light,
-// then a sparse celesta melody, with birdsong outside and the breeze through the window.
+// An original little waltz in D minor, for the castle across the valley: a celesta
+// music-box tune over an oom-pah-pah accompaniment, filling in as the sun comes up.
+// A soft string pad from the start, the waltz once there is a little light, the
+// tune after that, then strings singing along an octave down; with birdsong
+// outside and the breeze through the window.
 const midi = n => 440 * Math.pow(2, (n - 69) / 12);
 
-const BAR = 3.6;                                 // seconds: four easy beats
-const CHORDS = [                                 // two bars each
-  [41, 48, 57, 60, 64, 67],                      // F maj9
-  [38, 45, 53, 60, 65, 67],                      // D m7 add11
-  [34, 46, 53, 57, 60, 65],                      // B-flat maj7
-  [36, 48, 55, 57, 62, 67],                      // C 6 sus
+const BEAT = 0.62, BAR = BEAT * 3;               // seconds: a gentle waltz, three beats to the bar
+const CHORD = {                                  // bass, then the chord above it
+  Dm: [38, 57, 62, 65], Bb: [34, 58, 62, 65], Gm: [43, 58, 62, 67], A7: [33, 57, 61, 67], F: [41, 57, 60, 65], C: [36, 55, 60, 64],
+};
+// sixteen bars, then round again
+const HARMONY = ['Dm', 'Bb', 'Gm', 'A7', 'Dm', 'F', 'C', 'A7', 'Bb', 'Gm', 'Dm', 'A7', 'Gm', 'Dm', 'A7', 'Dm'];
+const TUNE = [                                   // per bar: [note, beat it starts on, beats it lasts]
+  [[81, 0, 1.5], [79, 1.5, 0.5], [77, 2, 1]], [[74, 0, 2], [77, 2, 1]], [[79, 0, 1], [82, 1, 1], [81, 2, 1]], [[76, 0, 2], [73, 2, 1]],
+  [[74, 0, 1], [77, 1, 1], [81, 2, 1]], [[84, 0, 1.5], [81, 1.5, 0.5], [77, 2, 1]], [[79, 0, 1], [76, 1, 1], [79, 2, 1]], [[81, 0, 3]],
+  [[77, 0, 1], [74, 1, 1], [77, 2, 1]], [[82, 0, 1.5], [81, 1.5, 0.5], [79, 2, 1]], [[77, 0, 1], [81, 1, 1], [86, 2, 1]], [[85, 0, 2], [81, 2, 1]],
+  [[79, 0, 1], [82, 1, 1], [86, 2, 1]], [[81, 0, 1.5], [77, 1.5, 0.5], [74, 2, 1]], [[76, 0, 1], [79, 1, 1], [73, 2, 1]], [[74, 0, 3]],
 ];
-const MELODY = [77, 79, 81, 84, 86, 89, 91];     // F major pentatonic, where the tune wanders
 
 export function createMusic() {
   let ctx, master, wet, windGain, timer;
-  let progress = 0, muted = false, nextBar = 0, bar = 0, step = 3;
+  let progress = 0, muted = false, nextBar = 0, bar = 0;
 
   // one note: an oscillator through a gain envelope, sent partly to the reverb
   function tone(type, freq, t, { attack, hold = 0, release, gain, detune = 0, pan = 0, send = 0.5 }) {
@@ -39,21 +45,22 @@ export function createMusic() {
     return osc;
   }
 
-  function pad(chord, t) {                       // slow swell, held for the two bars
-    chord.forEach((n, i) => {
-      const bass = i === 0;
-      for (const detune of bass ? [0] : [-5, 5])
-        tone(bass ? 'sine' : 'triangle', midi(n), t, { attack: 2.5, hold: BAR * 2 - 3, release: 3.5, gain: bass ? 0.07 : 0.018, detune, pan: (i - 2.5) * 0.18, send: 0.7 });
+  function pad(chord, t) {                       // strings: a slow swell under each bar
+    chord.slice(1).forEach((n, i) => {
+      for (const detune of [-6, 6]) tone('sawtooth', midi(n - 12), t, { attack: 0.9, hold: BAR - 0.9, release: 1.6, gain: 0.0045, detune, pan: (i - 1) * 0.3, send: 0.8 });
     });
   }
-  function pluck(n, t, gain, pan) {              // music box: a bright tine, a ring two octaves up
-    tone('sine', midi(n + 12), t, { attack: 0.003, release: 1.6, gain, pan, send: 0.8 });
-    tone('sine', midi(n + 12) * 4.02, t, { attack: 0.002, release: 0.35, gain: gain * 0.25, pan, send: 0.8 });
+  function pluck(n, t, gain, pan) {              // the waltz: a soft harp-like pluck
+    tone('triangle', midi(n), t, { attack: 0.004, release: 0.9, gain, pan, send: 0.6 });
+    tone('sine', midi(n) * 2, t, { attack: 0.003, release: 0.4, gain: gain * 0.3, pan, send: 0.6 });
   }
-  function bell(n, t, gain) {                    // melody: a soft felt-piano tone
-    tone('sine', midi(n), t, { attack: 0.012, release: 3.2, gain, send: 0.9 });
-    tone('sine', midi(n) * 3, t, { attack: 0.008, release: 0.7, gain: gain * 0.12, send: 0.9 });
-    tone('triangle', midi(n - 12), t, { attack: 0.02, release: 2.2, gain: gain * 0.35, send: 0.9 });
+  function celesta(n, t, beats, gain) {          // the tune: a bright, bell-like music box
+    tone('sine', midi(n), t, { attack: 0.004, hold: beats * BEAT * 0.2, release: 1.4 + beats * 0.4, gain, send: 0.9 });
+    tone('sine', midi(n) * 4, t, { attack: 0.002, release: 0.3, gain: gain * 0.22, send: 0.9 });
+    tone('sine', midi(n) * 2.01, t, { attack: 0.003, release: 0.8, gain: gain * 0.18, send: 0.9 });
+  }
+  function strings(n, t, beats, gain) {          // later on, strings sing the tune an octave down
+    for (const detune of [-7, 7]) tone('sawtooth', midi(n - 12), t, { attack: 0.18, hold: beats * BEAT - 0.18, release: 0.6, gain, detune, send: 0.9 });
   }
   function bird(t) {                             // a few quick falling chirps, somewhere outside
     const base = 2600 + Math.random() * 2200, pan = Math.random() * 1.6 - 0.8, count = 2 + (Math.random() * 4 | 0);
@@ -66,26 +73,23 @@ export function createMusic() {
   }
 
   function scheduleBar(t) {
-    const chord = CHORDS[(bar >> 1) % CHORDS.length];
-    if (bar % 2 === 0) pad(chord, t);
-    if (progress > 0.12) {                       // arpeggio: eighth notes rising through the chord, with gaps
-      const level = Math.min(1, (progress - 0.12) / 0.25);
-      for (let i = 0; i < 8; i++) {
-        if (Math.random() < 0.22) continue;
-        const n = chord[1 + (i * 2 + bar) % 5] + 12;
-        pluck(n, t + i * BAR / 8 + Math.random() * 0.015, 0.03 * level * (i % 4 === 0 ? 1.3 : 1), ((i % 5) - 2) * 0.22);
-      }
+    const k = bar % HARMONY.length, chord = CHORD[HARMONY[k]];
+    pad(chord, t);
+    if (progress > 0.08) {                       // oom-pah-pah: the bass on one, the chord on two and three
+      const level = Math.min(1, (progress - 0.08) / 0.2);
+      pluck(chord[0], t, 0.06 * level, 0);
+      for (const beat of [1, 2]) chord.slice(1).forEach((n, i) => pluck(n, t + beat * BEAT + i * 0.012, 0.016 * level, (i - 1) * 0.35));
     }
-    if (progress > 0.4) {                        // melody: a note or two a bar, stepping around the scale
-      const level = Math.min(1, (progress - 0.4) / 0.3);
-      for (const beat of [0, 1.5, 2.5]) {
-        if (Math.random() < 0.45) continue;
-        step = Math.max(0, Math.min(MELODY.length - 1, step + (Math.random() * 5 | 0) - 2));
-        bell(MELODY[step], t + beat * BAR / 4, 0.05 * level);
-      }
+    if (progress > 0.2) {                        // the tune
+      const level = Math.min(1, (progress - 0.2) / 0.2);
+      for (const [n, beat, beats] of TUNE[k]) celesta(n, t + beat * BEAT, beats, 0.055 * level);
+    }
+    if (progress > 0.5) {                        // and the strings join it
+      const level = Math.min(1, (progress - 0.5) / 0.3);
+      for (const [n, beat, beats] of TUNE[k]) strings(n, t + beat * BEAT, beats, 0.006 * level);
     }
     if (progress > 0.2) {                        // the birds wake with the light
-      const calls = Math.random() * (1 + progress * 3) | 0;
+      const calls = Math.random() * (1 + progress * 2) | 0;
       for (let i = 0; i < calls; i++) bird(t + Math.random() * BAR);
     }
     bar++;
@@ -140,7 +144,7 @@ export function createMusic() {
     setGust(g) { if (ctx) windGain.gain.setTargetAtTime(0.012 + 0.03 * g, ctx.currentTime, 0.4); },
     setPlaying(on) { if (ctx) on ? ctx.resume() : ctx.suspend(); },
     setMuted(m) { muted = m; if (ctx) master.gain.setTargetAtTime(m ? 0.0001 : 0.9, ctx.currentTime, 0.2); },
-    restart() { bar = 0; step = 3; },
+    restart() { bar = 0; },
     stop() { clearInterval(timer); },
   };
 }

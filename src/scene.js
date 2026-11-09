@@ -627,15 +627,15 @@ export function buildScene(scene, renderer) {
       else { g.fillRect(x - 26, y, 24, wh); g.fillRect(x + ww + 2, y, 24, wh); }
     }
   });
-  const roofTex = tex(256, 256, (g, s) => {
-    g.fillStyle = '#a8553a'; g.fillRect(0, 0, s, s);
-    for (let x = 0; x < s; x += 16) {
-      g.fillStyle = `hsl(${12 + rand() * 10}, ${45 + rand() * 15}%, ${36 + rand() * 12}%)`; g.fillRect(x, 0, 11, s);
-      g.fillStyle = 'rgba(40,15,8,0.45)'; g.fillRect(x + 11, 0, 5, s);
+  // The castle's walls: pale dressed stone, coursed in blocks.
+  const stoneTex = tex(256, 256, (g, s) => {
+    g.fillStyle = '#a8a196'; g.fillRect(0, 0, s, s);
+    for (let r = 0; r < 8; r++) for (let c = -1; c < 6; c++) {
+      const x = (c + (r % 2) * 0.5) * s / 6, y = r * s / 8;
+      g.fillStyle = `hsl(36, ${6 + rand() * 6}%, ${70 + rand() * 14}%)`;
+      g.fillRect(x + 1.5, y + 1.5, s / 6 - 3, s / 8 - 3);
     }
-    g.strokeStyle = 'rgba(40,15,8,0.3)'; g.lineWidth = 2;
-    for (let y = 0; y < s; y += 32) { g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke(); }
-  }, 3, 2);
+  }, 2, 3);
 
   // ---------- shared materials: a soft pastel palette with gold accents ----------
   const P = { pink: 0xf7b6c8, blush: 0xfbe0e8, mint: 0xbfe6d6, lilac: 0xd9c8f0, butter: 0xfbe7a6, sky: 0xc6e2f5, cream: 0xfff6ea, white: 0xfdfaf6 };
@@ -823,7 +823,7 @@ export function buildScene(scene, renderer) {
     uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uGlow: { value: new THREE.Color() },
     uLand: { value: new THREE.Color() }, uCloud: { value: new THREE.Color() }, uDisc: { value: 0 }, uTime: { value: 0 },
   };
-  const eye = 1.4, R = 20, tall = 22, y0 = eye - tall * (1 - LAND.horizon / LAND.h);   // horizon at eye level, most of the backdrop below it
+  const eye = 1.4, R = 45, tall = 22 * R / 20, y0 = eye - tall * (1 - LAND.horizon / LAND.h);   // horizon at eye level, most of the backdrop below it
   const pano = new THREE.Mesh(new THREE.CylinderGeometry(R, R, tall, 96, 1, true), new THREE.ShaderMaterial({
     uniforms: sky, side: THREE.BackSide, ...throughWindows,
     vertexShader: `varying vec3 vDir; varying vec2 vUv;
@@ -862,9 +862,12 @@ export function buildScene(scene, renderer) {
   ground.renderOrder = -1;
   outside.add(pano, ground);
 
-  // The town: neighbours to the south-east and north-east, stepping down to the
-  // cliff edge, a bell tower, and the valley opening to the east below every window.
-  // Real geometry (world coordinates here: east is -x, south is -z), so it shifts as you move.
+  // A fairytale castle across the valley, where the town used to be: towers with
+  // pointed slate roofs on a rocky crag above a lake, a smaller keep to the south,
+  // and windows glowing warm. It stands north and south of due east, so the sun
+  // still comes up between them. Real geometry (world coordinates here: east is
+  // -x, south is -z), so it shifts as you move. It is laid out at a 1 : 1.6 scale,
+  // then moved out to about 30 m, inside the backdrop's 45 m.
   {
     const seenThrough = m => Object.assign(m, throughWindows);
     // Out of doors the whole sky lights a wall, far more than it lights our rooms.
@@ -874,28 +877,56 @@ export function buildScene(scene, renderer) {
       townMats.push([m, new THREE.Color(tint)]);
       return m;
     };
-    const tiles = openAir(roofTex, 0xffffff);
-    const hip = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4);      // a hipped roof one unit square
     const street = -9;                                                                 // how far below our floor the lane is
-    function house(x, z, w, d, eave, tint, pitch = 1.3) {
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, eave - street, d), openAir(facadeTex, tint));
-      body.position.set(x, (eave + street) / 2, z);
-      const roof = new THREE.Mesh(hip, tiles);
-      roof.scale.set(w + 0.5, pitch, d + 0.5);
-      roof.position.set(x, eave + pitch / 2, z);
-      outside.add(body, roof);
+    const stone = openAir(stoneTex, 0xf0ebe2), rock = openAir(null, 0x8a8474), slate = openAir(null, 0x5c6c96);
+    const lit = seenThrough(new THREE.MeshBasicMaterial({ color: 0xffc06a }));
+    const water = seenThrough(new THREE.MeshStandardMaterial({ color: 0x2f4a6c, roughness: 0.12, metalness: 0.3, emissive: 0x000000 }));
+    townMats.push([water, new THREE.Color(0x5a7fa8)]);
+    const castle = new THREE.Group(), K = 1.6;
+    castle.scale.setScalar(K);
+    castle.position.set(-8, -6, 0);
+    outside.add(castle);
+    const put = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); castle.add(o); return o; };
+    // a rocky crag rising from the valley floor to `top`
+    const floor = (y0 - castle.position.y) / K;
+    const crag = (x, z, sx, top, sz) => put(new THREE.DodecahedronGeometry(1, 1), rock, x, (top + floor) / 2, z).scale.set(sx, (top - floor) / 2, sz);
+    // lit slit windows on the side facing us (+x)
+    const windows = (x, z, w, y0, y1, n) => {
+      for (let i = 0; i < n; i++) put(new THREE.PlaneGeometry(w * 0.18, w * 0.4), lit, x, y0 + (y1 - y0) * (i + 0.5) / n, z).rotation.y = Math.PI / 2;
+    };
+    function tower(x, z, r, base, h, roof) {
+      put(new THREE.CylinderGeometry(r, r * 1.06, h, 24), stone, x, base + h / 2, z);
+      put(new THREE.CylinderGeometry(r * 1.14, r * 1.14, 0.4, 24), stone, x, base + h + 0.2, z);       // the corbelled lip
+      put(new THREE.ConeGeometry(r * 1.28, roof, 24), slate, x, base + h + 0.4 + roof / 2, z);
+      windows(x + r + 0.03, z, r * 2, base + h * 0.35, base + h * 0.92, 3);
     }
-    house(-10.5, -11.5, 6, 5, 2.4, 0xf3dccb);
-    house(-15.5, -7.5, 5, 6, -1.5, 0xe9c9a0, 1.5);           // lower, towards the cliff: we look down on its roof
-    house(-6.5, -15.5, 7, 5, 4.0, 0xf2e2c4);
-    house(-12.5, -13.8, 2.6, 2.6, 8.2, 0xdcc9a8, 2.2);       // the bell tower
-    const belfry = new THREE.Mesh(new THREE.BoxGeometry(2.7, 1.3, 2.7), seenThrough(new THREE.MeshStandardMaterial({ color: 0x3a3026, roughness: 1 })));
-    belfry.position.set(-12.5, 7.0, -13.8);
-    house(-10.5, 12.5, 6, 5, 1.6, 0xead2b0);
-    house(-15.5, 8.5, 5, 5, -2.2, 0xe3b98e, 1.2);
-    const cypress = new THREE.Mesh(new THREE.ConeGeometry(0.7, 6.5, 10), seenThrough(new THREE.MeshStandardMaterial({ color: 0x24382a, roughness: 1 })));
-    cypress.position.set(-8.2, -1.6, 7.5);
-    outside.add(belfry, cypress);
+    function hall(x, z, w, d, base, h) {                                               // w across (x), d along (z)
+      put(new THREE.BoxGeometry(w, h, d), stone, x, base + h / 2, z);
+      const gable = new THREE.Shape([new THREE.Vector2(-w / 2 - 0.15, 0), new THREE.Vector2(w / 2 + 0.15, 0), new THREE.Vector2(0, w * 0.75)]);
+      put(new THREE.ExtrudeGeometry(gable, { depth: d + 0.3, bevelEnabled: false }).translate(0, 0, -d / 2 - 0.15), slate, x, base + h, z);
+      for (let i = 0; i < Math.floor(d / 1.1); i++) windows(x + w / 2 + 0.03, z - d / 2 + 0.55 + i * 1.1, 1.6, base + h * 0.35, base + h * 0.8, 2);
+    }
+    function wall(x, z0, z1, base, h) {                                                // a curtain wall with battlements
+      put(new THREE.BoxGeometry(0.7, h, z1 - z0), stone, x, base + h / 2, (z0 + z1) / 2);
+      for (let z = z0 + 0.25; z < z1 - 0.2; z += 0.7) put(new THREE.BoxGeometry(0.7, 0.45, 0.35), stone, x, base + h + 0.22, z);
+    }
+    // the main castle, north of east, seen from the bedroom and kids' windows
+    crag(-16, 6, 5.5, -3.2, 8);
+    hall(-16.2, 6.2, 4, 7, -3.5, 4.5);
+    tower(-14, 10.6, 1.3, -3.5, 11, 4.6);                                              // the great tower
+    tower(-18, 10.2, 1.0, -3.5, 8, 3.6);
+    tower(-13.6, 2.3, 0.9, -3.5, 7, 3.3);
+    tower(-17.6, 2.6, 0.8, -3.5, 6, 3.0);
+    tower(-15.7, 6.6, 0.55, 1.6, 5.5, 2.8);                                            // a slender spire from the hall roof
+    wall(-13.4, 3.1, 9.5, -3.5, 3.2);
+    // a smaller keep to the south of east, seen from the living room
+    crag(-15, -11, 4.5, -3.6, 5);
+    hall(-15.2, -11, 3, 4, -4, 3.5);
+    tower(-13.5, -8.8, 0.9, -4, 7, 3.2);
+    tower(-16, -13.4, 1.1, -4, 9.5, 4.2);
+    wall(-13.2, -12.8, -9.6, -4, 2.6);
+    // the lake below, catching the sky
+    put(new THREE.CircleGeometry(9, 48), water, -15, -9.8, 0).rotation.x = -Math.PI / 2;
 
     // Our own building, seen across the courtyard from the kids' window: the outside
     // faces of the main bedroom and the little hall, running down to the lane.

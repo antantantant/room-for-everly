@@ -30,7 +30,8 @@ A squirrel in a pink dress, from Everly's front and back drawings, made in the s
 
 ## Things to try
 
-- Press **Begin the sunrise**. It starts one minute before the sun comes up, with music, and the living-room window is open to the breeze.
+- Press **Begin the sunrise**. It starts one minute before the sun comes up, with music (an original celesta waltz), and the living-room window is open to the breeze.
+- Look out of the windows: a fairytale castle stands on a crag across the valley, above a lake, its windows glowing.
 - **Click a lamp** to switch it on or off: the bedside lamp, the bedroom floor lamp, the bathroom's vanity lights and the kids' desk lamp.
 - Use the buttons to jump between rooms, or drag and scroll to look around.
 
