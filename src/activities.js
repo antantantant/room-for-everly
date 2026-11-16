@@ -321,6 +321,8 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       yield* walkPlan(5.76, 8.55); yield* sit(wp(5.76, 0.42, 9.5, PI)); yield* wait(3, t => { swingLegs(t * 0.7); A.headZ = Math.sin(t) * 0.1; }); yield* unsit();
       const bowl = W(5.76, 0.42, 9.55); yield* wait(1.2, (k, t, dt) => { A.aRx = -1.3; emitEvery(dt, 25, 'bubble', bowl, { spread: 0.08, v: [0, 0.1, 0], vr: 0.1, life: 0.8, size: 0.03 }); });
       yield* stool(5.52, 8.65, -PI / 2); yield* splash(W(5.28, 0.98, 8.65), 2.5, t => handsForward(t, 0.15)); yield* offStool(); } },
+    basinWash: { title: 'Wash her hands', cost: 0.01, *run() { yield* stool(5.52, 8.65, -PI / 2); yield* splash(W(5.28, 0.98, 8.65), 4, t => handsForward(t, 0.15)); yield* wait(1, (k, t) => { A.aLx = A.aRx = -1.2; A.aLs = A.aRs = 0.5 + Math.sin(t * 30) * 0.25; }); emit('spark', mouth(), { n: 5, spread: 0.15, v: [0, 0.25, 0], life: 1, size: 0.05 }); yield* offStool(); } },
+    basinBubbles: { title: 'Wash her hands with lots of bubbles', cost: 0.01, mood: 'happy', *run() { yield* stool(5.52, 8.65, -PI / 2); yield* splash(W(5.28, 0.98, 8.65), 2, t => handsForward(t, 0.15)); yield* wait(2.5, (k, t, dt) => { handsForward(t, 0.15); emitEvery(dt, 8, 'bubble', mouth(), { spread: 0.15, v: [0, 0.3, 0], vr: 0.1, life: 1.6, size: 0.05 }); }); yield* offStool(); } },
     shower: { title: 'Take a shower', cost: -0.05, mood: 'happy', *run() {
       yield* walkPlan(7.2, 8.6); yield* walkPlan(7.05, 9.4, PI); A.y = 0.07; const head = W(7.05, 2.0, 9.72);
       yield* wait(5, (k, t, dt) => { A.aLx = A.aRx = -2.6 + Math.sin(t * 8) * 0.3; A.aLs = A.aRs = -0.1; emitEvery(dt, 40, 'drop', head, { spread: 0.12, v: [0, -1.6, -0.1], vr: 0.1, grav: 3, life: 0.9, size: 0.03 }); emitEvery(dt, 4, 'bubble', mouth(), { spread: 0.12, v: [0, 0.2, 0], life: 1.5, size: 0.04 }); });
@@ -332,6 +334,17 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     colour: { title: 'Colour with crayons', cost: 0.02, mood: 'happy', *run() { yield* kidsSit(); inHand(prop('crayon')); yield* wait(4.5, t => scribble(t, 1.8)); } },
     doodle: { title: 'Doodle and show it off', cost: 0.02, mood: 'happy', *run() { yield* kidsSit(); const c = inHand(prop('crayon')); yield* wait(2.5, t => scribble(t)); c.removeFromParent(); const p = inHand(prop('paper')); p.position.set(0.06, -0.26, 0.06); p.rotation.x = PI / 2; yield* wait(2.5, () => { A.aLx = A.aRx = -2.4; A.aLs = A.aRs = 0; A.headX = 0; }); emit('spark', mouth(), { n: 5, spread: 0.2, v: [0, 0.3, 0], life: 1, size: 0.06 }); } },
     // wardrobes
+    wear: { title: 'Wear these clothes', cost: 0.01, mood: 'happy', *run(spot) {
+      const p = spot.it.obj.getWorldPosition(new THREE.Vector3());
+      yield* faceTo(p.x, p.z);
+      yield* blend({ aRx: -2.6, aRs: 0.1 }, 0.4);
+      yield* wait(0.3);
+      limbsRest();
+      const h0 = A.h; let on = false;
+      yield* wait(0.9, k => { A.h = h0 + ease(k) * PI * 2; A.y = 0.01 + Math.sin(PI * k) * 0.15; if (k > 0.5 && !on) { on = true; wearColor(spot.it.color); emit('spark', W(0, 0, 0).copy(group.position).setY(0.6), { n: 14, spread: 0.3, v: [0, 0.4, 0], vr: 0.2, life: 1.2, size: 0.07 }); } });
+      A.h = h0; A.y = 0.01;
+      yield* wait(1, () => { A.aLs = A.aRs = 0.9; A.aLx = A.aRx = -0.4; });
+    } },
     tryOn: { title: 'Try on clothes', cost: 0.03, mood: 'happy', *run(spot) { yield* intoWardrobe(spot); yield* wait(1.3); spot.it.on = true; dressUp(); emit('spark', W(0, 0, 0).copy(group.position).setY(0.6), { n: 14, spread: 0.3, v: [0, 0.4, 0], vr: 0.2, life: 1.2, size: 0.07 }); yield* outOfWardrobe(spot); } },
     hide: { title: 'Hide in the wardrobe', cost: 0.02, mood: 'happy', *run(spot) { yield* intoWardrobe(spot); yield* wait(1.5); spot.it.on = true; yield* wait(1.4, k => { A.headZ = 0.35 * Math.sin(k * PI); A.roll = 0.2 * Math.sin(k * PI); }); yield* outOfWardrobe(spot); } },
     // lamps, doors, plants, plushes, the backpack
@@ -421,6 +434,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
   }
   let dressTimer = 0;
   function dressUp() { squirrel.setDress(pick(DRESSES)); dressTimer = 25; }   // her own pink dress comes back after a while
+  function wearColor(c) { if (c) squirrel.setDress(c); dressTimer = 0; }       // clothes she chose: she keeps them on
   function* hug(it, sec, sitting = false) {
     borrow(it.obj, group, new THREE.Vector3(0, sitting ? 0.36 : 0.33, 0.17));
     yield* wait(sec, (k, t, dt) => {
@@ -480,7 +494,8 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     { box: box(5.32, 7.48, 0, 1.0, 5.46, 6.0), acts: ['brush', 'washFace', 'floss', 'vanityFaces'] },
     { box: box(9.2, 9.4, 0.8, 1.85, 6.35, 7.15), acts: ['mirrorFaces', 'mirrorPose'], stand: W(8.95, 0, 6.75) },
     { box: box(9.2, 9.4, 0.2, 1.8, 8.3, 8.9), acts: ['mirrorFaces', 'mirrorPose'], stand: W(8.95, 0, 8.6) },
-    { box: box(5.06, 6.45, 0, 1.0, 8.3, 9.94), acts: ['toilet'] },
+    { box: box(5.5, 6.05, 0, 1.0, 9.0, 9.94), acts: ['toilet'] },
+    { box: box(5.06, 5.32, 0.7, 1.0, 8.42, 8.88), acts: ['basinWash', 'basinBubbles'] },   // the little basin by the toilet
     { box: box(6.56, 7.54, 0, 2.0, 8.97, 9.94), acts: ['shower'] },
     { box: box(4.38, 4.94, 0, 0.8, 8.2, 9.3), acts: ['type', 'video'] },
     { box: box(6.05, 7.35, 0, 0.7, 10.06, 10.6), acts: ['draw', 'colour', 'doodle'] },
@@ -501,6 +516,8 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
   for (const it of named('pouf')) spots.push({ it, acts: ['poufSit'] });
   for (const it of named('backpack')) spots.push({ it, acts: ['bagLook', 'bagMarch'] });
 
+  const wearSpots = new Map();
+  const wearSpot = it => { if (!wearSpots.has(it)) wearSpots.set(it, { it, acts: ['wear'] }); return wearSpots.get(it); };
   const boundsOf = spot => spot.box || new THREE.Box3().setFromObject(spot.it.obj);
   // a plush near a place (world), not being carried
   const plushNear = (at, r) => named('Melody plush').find(p => !isCarried(p.obj) && p.obj.getWorldPosition(new THREE.Vector3()).distanceTo(at) < r);
@@ -537,7 +554,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       act = { title: 'Too sleepy to play... time for a nap', cost: 0, *run() { feelings.set('sleepy', 6); yield* wait(3, (k, t) => { A.headX = 0.3 + Math.sin(t * 1.5) * 0.15; A.aLx = A.aRx = 0.1; }); } };
       id = 'tired';
     }
-    repeats = id === last ? repeats + 1 : 1;
+    repeats = id === last && id !== 'wear' ? repeats + 1 : 1;
     last = id;
     if (act.mood) feelings.set(act.mood, 8);
     feelings.event('use');
@@ -605,7 +622,8 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       applyPose();
       if (r.done) end(false);
     }
-    current = job || interaction.carry ? null : nearest();
+    const lit = interaction.current;                       // clothes lit up: R puts them on
+    current = job || interaction.carry ? null : lit && lit.name === 'clothes' && lit.color ? wearSpot(lit) : nearest();
     if (current) { const b = boundsOf(current), c = b.getCenter(new THREE.Vector3()); c.y = Math.min(b.max.y, 1.9) + 0.25; pin(bubble, c); }
     else bubble.hidden = true;
     if (captionText) pin(caption, group.position.clone().setY(group.position.y + 1.2));

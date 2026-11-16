@@ -1317,7 +1317,7 @@ export function buildScene(scene, renderer) {
   // clothes on a hanger hanging from (x, y, z): thin across x, `depth` deep along z
   const garmentColors = [0xf7b6c8, 0xffffff, 0xfbd3df, 0xd9c8f0, 0xfbe7a6, 0xf48fb1, 0xc6e2f5, 0xfde6ee];
   function garment(c, len, depth, x, y, z, parent) {
-    const g = pickable(group(x, y, z, 0, parent), 'clothes', { lay: [0, 0, Math.PI / 2] });
+    const g = pickable(group(x, y, z, 0, parent), 'clothes', { lay: [0, 0, Math.PI / 2], color: '#' + c.toString(16).padStart(6, '0') });
     add(new THREE.TorusGeometry(0.018, 0.003, 6, 16, Math.PI), gold, 0, 0, 0, g).rotation.y = Math.PI / 2;
     soft(0.035, len, depth, 0.015, paint(c), 0, -0.035 - len / 2, 0, g);
     return g;
