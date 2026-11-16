@@ -76,7 +76,8 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
   const forward = h => [Math.sin(h), Math.cos(h)];
 
   // sitting: on a seat whose top is at height y, facing h. She stands in front of it, turns round and hops up.
-  let seatFrom = null;
+  // Once she is sitting she stays there until an arrow key is pressed; then she hops off.
+  let seatFrom = null, seated = false, testing = false;
   function* sit({ x, y, z, h }) {
     const [fx, fz] = forward(h);
     seatFrom = { x: x + fx * 0.38, z: z + fz * 0.38 };
@@ -84,8 +85,16 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     yield* turn(h);
     yield* hop(x, y - 0.13, z, -1.35);
     A.legL = A.legR = -1.35;
+    seated = true;
   }
-  function* unsit() { yield* hop(seatFrom.x, 0.01, seatFrom.z, 0); A.legL = A.legR = 0; }
+  function* hopOff() { yield* hop(seatFrom.x, 0.01, seatFrom.z, 0); A.legL = A.legR = 0; seated = false; }
+  function* stay() {                                        // sit on, calmly, until an arrow key
+    if (testing) return;
+    showCaption('Sitting · press an arrow key to get up');
+    yield* blend({ aLx: 0, aLs: SPREAD, aRx: 0, aRs: SPREAD, headX: 0, headZ: 0, roll: 0 }, 0.4);
+    yield* wait(Infinity, (k, t) => { A.legL = -1.35 + 0.12 * Math.sin(t * 1.8); A.legR = -1.35 - 0.12 * Math.sin(t * 1.8); A.headZ = Math.sin(t * 0.5) * 0.05; });
+  }
+  function* unsit() { yield* stay(); yield* hopOff(); }
   const swingLegs = t => { A.legL = -1.35 + 0.3 * Math.sin(t * 5); A.legR = -1.35 - 0.3 * Math.sin(t * 5); };
 
   // lying down on her back: feet at (x, z) on a top at height y, head towards the back of h
@@ -533,8 +542,10 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     if (act.mood) feelings.set(act.mood, 8);
     feelings.event('use');
     cleanups = [];
+    seated = false;
     const gen = (function* () {
       yield* act.run(spot);
+      if (seated) yield* unsit();                           // the desks: she is still on the chair
       limbsRest();
       if (A.y > 0.05 || A.pitch) yield* blend({ y: 0.01, pitch: 0 }, 0.3);
       yield* walk(home.x, home.z, home.h);
@@ -548,6 +559,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     cleanups.reverse().forEach(f => f());
     cleanups = [];
     stoolProp = null;
+    seated = false;
     if (aborted) { group.position.x = home.x; group.position.z = home.z; }
     group.rotation.set(0, A.h, 0);
     walker.place(aborted ? home.x : A.x, aborted ? home.z : A.z, aborted ? home.h : A.h);
@@ -580,13 +592,18 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
   function update(dt, step) {
     updateSparks(dt);
     if (dressTimer > 0 && (dressTimer -= dt) <= 0) squirrel.setDress();
-    if (job) {
-      if (step.input) end(true);
-      else {
-        const r = job.gen.next(dt);
-        applyPose();
-        if (r.done) end(false);
-      }
+    if (job && step.input && !job.leaving) {
+      if (seated) {                                         // sitting: an arrow key gets her up, off the seat
+        job.leaving = true;
+        job.gen = hopOff();
+        job.gen.next();
+        showCaption(null);
+      } else end(true);
+    }
+    if (job && (!step.input || job.leaving)) {
+      const r = job.gen.next(dt);
+      applyPose();
+      if (r.done) end(false);
     }
     current = job || interaction.carry ? null : nearest();
     if (current) { const b = boundsOf(current), c = b.getCenter(new THREE.Vector3()); c.y = Math.min(b.max.y, 1.9) + 0.25; pin(bubble, c); }
@@ -609,6 +626,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     // console helper for checking: stand her by each thing and run every activity it offers at full speed
     test() {
       const report = [];
+      testing = true;
       for (const spot of spots) for (const id of spot.acts) {
         if (job) end(true);
         const b = boundsOf(spot), c = b.getCenter(new THREE.Vector3()), r = Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2 + 0.35;
@@ -627,6 +645,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
           if (Math.hypot(p.x - at[0], p.z - at[1]) > 0.05) report.push(`${id}: ended away from where she started`);
         } catch (err) { spot.acts = keep; report.push(`${id}: ERROR ${err.message}`); if (job) { try { end(true); } catch (e) { job = null; } } }
       }
+      testing = false;
       return report.length ? report : ['all fine'];
     },
   };

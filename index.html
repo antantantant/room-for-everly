@@ -35,7 +35,7 @@
 <script>
 // GitHub Pages lets browsers keep this page for ten minutes. If a newer version has
 // been published since, fetch it fresh (which also refreshes the browser's copy) and reload once.
-const BUILD = '7';
+const BUILD = '8';
 fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
   const live = (t.match(/const BUILD = '([^']+)'/) || [])[1];
   if (!live || live === BUILD) return;
@@ -73,14 +73,14 @@ fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bump ?v= whenever src/ changes: it stops a browser pairing this page with an older cached module.
-import { createPipeline } from './src/pipeline.js?v=7';
-import { buildScene, views, SUNRISE } from './src/scene.js?v=7';
-import { createMusic } from './src/audio.js?v=7';
-import { createSquirrel } from './src/squirrel.js?v=7';
-import { createWalker } from './src/walk.js?v=7';
-import { createFeelings } from './src/feelings.js?v=7';
-import { createInteraction } from './src/interact.js?v=7';
-import { createActivities } from './src/activities.js?v=7';
+import { createPipeline } from './src/pipeline.js?v=8';
+import { buildScene, views, SUNRISE } from './src/scene.js?v=8';
+import { createMusic } from './src/audio.js?v=8';
+import { createSquirrel } from './src/squirrel.js?v=8';
+import { createWalker } from './src/walk.js?v=8';
+import { createFeelings } from './src/feelings.js?v=8';
+import { createInteraction } from './src/interact.js?v=8';
+import { createActivities } from './src/activities.js?v=8';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);
