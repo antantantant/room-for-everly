@@ -20,13 +20,22 @@
   #begin small { display: block; margin-top: 4px; font-size: 12px; opacity: .7; }
   #feelings { margin-top: 6px; font-size: 13px; }
   #feelings span { opacity: .7; margin-right: 6px; }
+  #bubble { position: fixed; transform: translate(-50%, -100%); width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; pointer-events: none;
+            font: 700 17px system-ui, sans-serif; color: #fff; background: #ef7fa6; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); animation: pop 0.9s ease-in-out infinite alternate; }
+  #bubble[hidden], #caption[hidden] { display: none; }
+  @keyframes pop { from { margin-top: 0; } to { margin-top: -7px; } }
+  #caption { position: fixed; transform: translate(-50%, -100%); padding: 4px 12px; border-radius: 999px; font-size: 14px; white-space: nowrap; pointer-events: none;
+             color: #fff; background: rgba(170, 96, 160, .85); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+  #energy { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 13px; opacity: .9; }
+  #energy i { display: inline-block; width: 70px; height: 9px; border-radius: 9px; background: rgba(255,255,255,.18); overflow: hidden; }
+  #energy b { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #f6a5c0, #ffd36e); transition: width .3s; }
   #hint { position: fixed; transform: translate(-50%, -100%); padding: 4px 10px; border-radius: 999px; font-size: 13px; white-space: nowrap; pointer-events: none;
           color: #5a2a3c; background: rgba(255, 246, 214, .92); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 </style>
 <script>
 // GitHub Pages lets browsers keep this page for ten minutes. If a newer version has
 // been published since, fetch it fresh (which also refreshes the browser's copy) and reload once.
-const BUILD = '6';
+const BUILD = '7';
 fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
   const live = (t.match(/const BUILD = '([^']+)'/) || [])[1];
   if (!live || live === BUILD) return;
@@ -45,11 +54,13 @@ fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
 <body>
 <div id="label">
   <h1>Room for Everly</h1>
-  <p>Arrow keys walk the squirrel · Space picks up, puts down, opens and switches · L puts back what she moved · drag to rotate · scroll to zoom</p>
+  <p>Arrow keys walk the squirrel · R plays with whatever has a P · Space picks up, puts down, opens and switches · L puts back what she moved · drag to rotate · scroll to zoom</p>
   <button data-view="overview">Overview</button><button data-view="living">Living room</button><button data-view="bedroom">Bedroom</button><button data-view="bathroom">Bathroom</button><button data-view="kids">Kids' room</button><button data-view="plan">Floor plan</button><button data-view="squirrel">Squirrel</button>
-  <div id="feelings"><span>Feelings (1–5)</span><button data-feel="happy">😊 Happy</button><button data-feel="sad">😢 Sad</button><button data-feel="angry">😠 Angry</button><button data-feel="bored">😑 Bored</button><button data-feel="sleepy">😴 Sleepy</button></div>
+  <div id="feelings"><span>Feelings (1–5)</span><button data-feel="happy">😊 Happy</button><button data-feel="sad">😢 Sad</button><button data-feel="angry">😠 Angry</button><button data-feel="bored">😑 Bored</button><button data-feel="sleepy">😴 Sleepy</button><span id="energy">Energy <i><b id="energyFill"></b></i></span></div>
 </div>
 <div id="hint" hidden></div>
+<div id="bubble" hidden>P</div>
+<div id="caption" hidden></div>
 <div id="transport" hidden>
   <span id="clock"></span>
   <button id="play">Pause</button>
@@ -62,13 +73,14 @@ fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bump ?v= whenever src/ changes: it stops a browser pairing this page with an older cached module.
-import { createPipeline } from './src/pipeline.js?v=6';
-import { buildScene, views, SUNRISE } from './src/scene.js?v=6';
-import { createMusic } from './src/audio.js?v=6';
-import { createSquirrel } from './src/squirrel.js?v=6';
-import { createWalker } from './src/walk.js?v=6';
-import { createFeelings } from './src/feelings.js?v=6';
-import { createInteraction } from './src/interact.js?v=6';
+import { createPipeline } from './src/pipeline.js?v=7';
+import { buildScene, views, SUNRISE } from './src/scene.js?v=7';
+import { createMusic } from './src/audio.js?v=7';
+import { createSquirrel } from './src/squirrel.js?v=7';
+import { createWalker } from './src/walk.js?v=7';
+import { createFeelings } from './src/feelings.js?v=7';
+import { createInteraction } from './src/interact.js?v=7';
+import { createActivities } from './src/activities.js?v=7';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);
@@ -127,7 +139,11 @@ addEventListener('keydown', e => {
   if (n >= 0 && !e.metaKey && !e.ctrlKey) feelings.set(['happy', 'sad', 'angry', 'bored', 'sleepy'][n]);
 });
 // Space: pick up, put down, open, shut, switch on and off
-const interaction = createInteraction({ room, squirrel, walker, scene, camera, pipeline, feelings, hint: document.getElementById('hint') });
+let activities = null;
+const interaction = createInteraction({ room, squirrel, walker, scene, camera, pipeline, feelings, hint: document.getElementById('hint'), isBusy: () => !!activities?.busy });
+// R: play with whatever has a P over it (sleep in the bunk bed, bounce on the sofa...)
+activities = createActivities({ room, squirrel, walker, feelings, scene, pipeline, interaction, camera, bubble: document.getElementById('bubble'), caption: document.getElementById('caption') });
+window.__activities = activities;
 window.__room = room;
 window.__feelings = feelings;
 window.__interaction = interaction;
@@ -211,11 +227,13 @@ pipeline.start(() => {
   last = now;
   // The squirrel is always a little alive (her tail waves), so every frame is drawn;
   // her shadow is redrawn every other frame.
-  const step = walker.update(dt, { mood: feelings.mood, carry: interaction.carry });
+  const step = walker.update(dt, { mood: feelings.mood, carry: interaction.carry, frozen: activities.busy });
   feelings.update(dt, step);
   // doors, wardrobes and the fridge glide open and shut; once one stops, her map is redrawn
   if (room.update(dt).some(it => it.verbs[0] === 'open')) walker.refresh();
+  activities.update(dt, step);               // while she is doing something, it poses her (after the walker)
   interaction.update(dt);
+  energyFill.style.width = `${Math.round(feelings.energy * 100)}%`;
   controls.update();
   if (frame++ % 2) pipeline.renderer.shadowMap.needsUpdate = true;
   breeze += dt;                                                    // curtains at an open window blow

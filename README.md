@@ -25,6 +25,15 @@ A squirrel in a pink dress, from Everly's front and back drawings, made in the s
 - **Space** uses whatever is glowing next to her (its name shows in a label):
   - picks things up: cushions, pillows, plushes, toys, cups and plates, the kettle, cupcakes, clothes, chairs, plants and more. Small things are carried in front of her, big ones over her head. Space again puts it down in front of her, on a table if there is one there.
   - opens and shuts the doors, windows (the curtains blow when one is open), wardrobes and the pink fridge (with food inside to take out), and switches the lamps and the TV on and off.
+- **R** plays with whatever has a pink **P** bubble over it. Each press picks one of its activities at random, for example:
+  - bunk bed: sleep or sit on the lower bunk, or climb the ladder and sleep or jump on the top bunk
+  - big bed: sleep, sit on the edge, bounce, hug Melody · sofas: sit, nap, bounce, look out at the castle
+  - kitchen: stir the saucepan, boil the kettle, wash hands or a plate, grab a snack or milk from the fridge, eat a cupcake
+  - bathroom: brush teeth, wash face, floss, funny faces in the mirrors, use the toilet, take a shower
+  - desks: type or watch a video on the laptop, draw, colour, doodle and show it off · wardrobes: try on clothes (a new dress for a while) or hide
+  - rugs: dance, roll around, bunny hops · the TV, toys, chairs, pouf, plants, plushes, doors, the floor lamp, the backpack and the kids' window too
+  - Any arrow key stops an activity early.
+- **Energy**: playing costs energy (bouncing and dancing most), walking a little. Sleeping fills it up and snacks help. When it runs low she gets sleepy and won't play until she has had a nap. Doing the same thing three times in a row bores her.
 - **L** sends the thing she moved last back to where it started, even out of her hands. Press it again for the one before, and so on.
 - **Feelings**: she is happy when she picks something up or switches something on, sad when she puts down a plush or the TV goes off, cross if she keeps walking into things, bored if left alone, and then sleepy. The feeling buttons (or keys 1 to 5) set one directly.
 

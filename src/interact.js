@@ -12,7 +12,8 @@ const HOLD_FRONT = new THREE.Vector3(0, 0.3, 0.2);   // hands, held out in front
 const HOLD_OVER = 0.97;                               // just above the tips of her ears
 const BIG = { tall: 0.45, wide: 0.55 };               // bigger than this goes over her head
 
-export function createInteraction({ room, squirrel, walker, scene, camera, pipeline, feelings, hint }) {
+// isBusy(): she is in the middle of an activity (R), so Space and L wait.
+export function createInteraction({ room, squirrel, walker, scene, camera, pipeline, feelings, hint, isBusy = () => false }) {
   const holder = new THREE.Group();
   squirrel.group.add(holder);
   const items = room.interactables;
@@ -122,6 +123,7 @@ export function createInteraction({ room, squirrel, walker, scene, camera, pipel
   }
 
   addEventListener('keydown', e => {
+    if (isBusy()) return;
     if (e.code === 'KeyL' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) { if (!tweens.length) sendBack(); return; }
     if (e.code !== 'Space' || e.repeat) return;
     e.preventDefault();
@@ -171,6 +173,12 @@ export function createInteraction({ room, squirrel, walker, scene, camera, pipel
       tw.obj.position.lerpVectors(tw.fromP, tw.toP, k);
       tw.obj.quaternion.slerpQuaternions(tw.fromQ, tw.toQ, k);
       if (tw.t === 1) { tweens.splice(i, 1); tw.done?.(); }
+    }
+    if (isBusy()) {                              // an activity has her: nothing to offer until it ends
+      current = null;
+      if (outlined) { outlined = null; pipeline.setOutline([]); }
+      label(null);
+      return;
     }
     current = held ? null : nearest();
     const show = current && current.obj;

@@ -120,6 +120,7 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
 
   const baseTailY = parts.tail.rotation.y, arms = [[parts.armL, 1], [parts.armR, -1]], legs = [[parts.legL, 1], [parts.legR, -1]];
   const baseArmZ = parts.armL.rotation.z;
+  group.rotation.order = 'YXZ';             // turn, then tip (so she can lie down facing any way)
   let heading = group.rotation.y, phase = 0, walk = 0, time = 0, front = 0, over = 0;
   const forward = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
   const style = { ...STYLE.neutral };
@@ -127,7 +128,8 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
   // Moves and animates her. `mood` is how she feels; `carry` is 'front', 'over'
   // (above her head) or nothing. Returns whether she walked, whether she walked
   // into something, and whether any walking key is held.
-  function update(dt, { mood = 'neutral', carry } = {}) {
+  // `frozen`: something else (an activity) is moving her, so the keys do not; they are still reported.
+  function update(dt, { mood = 'neutral', carry, frozen } = {}) {
     time += dt;
     const want = STYLE[mood] || STYLE.neutral, ease = Math.min(1, dt * 4);
     for (const k in style) style[k] += (want[k] - style[k]) * ease;
@@ -144,7 +146,7 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
     if (keys.has('right')) move.add(right);
     if (keys.has('left')) move.sub(right);
     let walked = 0, bumped = false;
-    if (move.lengthSq() > 0) {
+    if (move.lengthSq() > 0 && !frozen) {
       move.normalize();
       // turn to face the way she is going, the short way round
       const want = Math.atan2(move.x, move.z);
@@ -166,7 +168,7 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
         controls.target.x += p.x - x0; controls.target.z += p.z - z0;
       }
     }
-    const goal = move.lengthSq() > 0 ? 1 : 0;
+    const goal = move.lengthSq() > 0 && !frozen ? 1 : 0;
     walk += (goal - walk) * Math.min(1, dt * 8);
     phase += walked * STRIDE;
 

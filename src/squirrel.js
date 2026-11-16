@@ -315,5 +315,14 @@ export function createSquirrel() {
     mesh(ball(radius(1), 24, 16), tailMat, tail, tip.x, tip.y, tip.z);
   }
 
-  return { group: g, parts: { head, armL: arms[1], armR: arms[0], legL: legs[1], legR: legs[0], tail, zzz }, setFace };
+  // a different dress for a while (trying clothes on); setDress() with no colour puts the pink one back
+  const bodices = new Map([[C.dress, torso.material.map]]);
+  const setDress = (color = C.dress) => {
+    if (!bodices.has(color)) bodices.set(color, projected(color, null, dressBack, 1024, 512));
+    torso.material.map = bodices.get(color);
+    dress.color.set(color);
+    skirt.material.color.set(color);
+  };
+
+  return { group: g, parts: { head, armL: arms[1], armR: arms[0], legL: legs[1], legR: legs[0], tail, zzz }, setFace, setDress };
 }

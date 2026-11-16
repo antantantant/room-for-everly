@@ -2101,5 +2101,5 @@ export function buildScene(scene, renderer) {
   setSun(SUNRISE.start);
   renderSunDepth();
 
-  return { hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update };
+  return { hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ } };
 }
