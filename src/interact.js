@@ -136,7 +136,7 @@ export function createInteraction({ room, squirrel, walker, scene, camera, pipel
   function candidates() {
     const p = squirrel.group.position, h = walker.heading, fx = Math.sin(h), fz = Math.cos(h), list = [];
     for (const it of items) {
-      if (it === held || (it.inside && it.inside.k < 0.8)) continue;
+      if (it === held || !it.obj.visible || (it.inside && it.inside.k < 0.8)) continue;   // hidden: clothes she has on
       let best = null;
       for (const b of partsOf(it)) {
         if (b.min.y > 1.9) continue;

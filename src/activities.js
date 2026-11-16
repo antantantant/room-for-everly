@@ -341,11 +341,11 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       yield* wait(0.3);
       limbsRest();
       const h0 = A.h; let on = false;
-      yield* wait(0.9, k => { A.h = h0 + ease(k) * PI * 2; A.y = 0.01 + Math.sin(PI * k) * 0.15; if (k > 0.5 && !on) { on = true; wearColor(spot.it.color); emit('spark', W(0, 0, 0).copy(group.position).setY(0.6), { n: 14, spread: 0.3, v: [0, 0.4, 0], vr: 0.2, life: 1.2, size: 0.07 }); } });
+      yield* wait(0.9, k => { A.h = h0 + ease(k) * PI * 2; A.y = 0.01 + Math.sin(PI * k) * 0.15; if (k > 0.5 && !on) { on = true; wearColor(spot.it); emit('spark', W(0, 0, 0).copy(group.position).setY(0.6), { n: 14, spread: 0.3, v: [0, 0.4, 0], vr: 0.2, life: 1.2, size: 0.07 }); } });
       A.h = h0; A.y = 0.01;
       yield* wait(1, () => { A.aLs = A.aRs = 0.9; A.aLx = A.aRx = -0.4; });
     } },
-    tryOn: { title: 'Try on clothes', cost: 0.03, mood: 'happy', *run(spot) { yield* intoWardrobe(spot); yield* wait(1.3); spot.it.on = true; dressUp(); emit('spark', W(0, 0, 0).copy(group.position).setY(0.6), { n: 14, spread: 0.3, v: [0, 0.4, 0], vr: 0.2, life: 1.2, size: 0.07 }); yield* outOfWardrobe(spot); } },
+    tryOn: { title: 'Try on clothes', cost: 0.03, mood: 'happy', *run(spot) { yield* intoWardrobe(spot); yield* wait(1.3); spot.it.on = true; dressUp(spot); emit('spark', W(0, 0, 0).copy(group.position).setY(0.6), { n: 14, spread: 0.3, v: [0, 0.4, 0], vr: 0.2, life: 1.2, size: 0.07 }); yield* outOfWardrobe(spot); } },
     hide: { title: 'Hide in the wardrobe', cost: 0.02, mood: 'happy', *run(spot) { yield* intoWardrobe(spot); yield* wait(1.5); spot.it.on = true; yield* wait(1.4, k => { A.headZ = 0.35 * Math.sin(k * PI); A.roll = 0.2 * Math.sin(k * PI); }); yield* outOfWardrobe(spot); } },
     // lamps, doors, plants, plushes, the backpack
     lampPlay: { title: 'Switch the lamp on and off', cost: 0.02, mood: 'happy', *run(spot) { const l = lampNamed('floor lamp'), was = l.on; yield* faceSpot(spot); for (let i = 0; i < 6; i++) { yield* wait(0.45, k => { A.aRx = -1.6 - Math.sin(k * PI) * 0.4; }); room.setLamp(l, !l.on); } room.setLamp(l, was); } },
@@ -433,8 +433,20 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     spot.it.on = false;
   }
   let dressTimer = 0;
-  function dressUp() { squirrel.setDress(pick(DRESSES)); dressTimer = 25; }   // her own pink dress comes back after a while
-  function wearColor(c) { if (c) squirrel.setDress(c); dressTimer = 0; }       // clothes she chose: she keeps them on
+  // what she is wearing: one of the clothes off a rail (it leaves its hanger while she has it on), or her pink dress
+  let worn = null;
+  function wearItem(it) {
+    if (worn) worn.obj.visible = true;
+    worn = it;
+    if (it) { it.obj.visible = false; squirrel.setDress(it.color); } else squirrel.setDress();
+  }
+  const clothesIn = obj => named('clothes').filter(c => c.color && c !== worn && !isCarried(c.obj) && (() => { for (let o = c.obj; o; o = o.parent) if (o === obj) return true; return false; })());
+  function dressUp(spot) {                                  // trying on: one of that wardrobe's own clothes, for a while
+    const choices = clothesIn(spot.it.obj);
+    if (choices.length) wearItem(pick(choices)); else squirrel.setDress(pick(DRESSES));
+    dressTimer = 25;
+  }
+  function wearColor(it) { wearItem(it); dressTimer = 0; }  // clothes she chose: she keeps them on
   function* hug(it, sec, sitting = false) {
     borrow(it.obj, group, new THREE.Vector3(0, sitting ? 0.36 : 0.33, 0.17));
     yield* wait(sec, (k, t, dt) => {
@@ -608,7 +620,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
   // step: what the walker reported this frame (a walking key held stops an activity)
   function update(dt, step) {
     updateSparks(dt);
-    if (dressTimer > 0 && (dressTimer -= dt) <= 0) squirrel.setDress();
+    if (dressTimer > 0 && (dressTimer -= dt) <= 0) wearItem(null);
     if (job && step.input && !job.leaving) {
       if (seated) {                                         // sitting: an arrow key gets her up, off the seat
         job.leaving = true;
