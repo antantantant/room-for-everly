@@ -205,6 +205,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     spark: spriteTex(g => { g.fillStyle = '#ffe27a'; g.beginPath(); for (let i = 0; i < 8; i++) { const r = i % 2 ? 7 : 28, a = i / 8 * PI * 2; g.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r); } g.fill(); }),
     heart: spriteTex(g => { g.fillStyle = '#f472a0'; g.beginPath(); g.moveTo(32, 54); g.bezierCurveTo(4, 32, 14, 6, 32, 22); g.bezierCurveTo(50, 6, 60, 32, 32, 54); g.fill(); }),
     note: spriteTex(g => { g.fillStyle = '#9b7fe0'; g.font = 'bold 52px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('♪', 32, 34); }),
+    leaf: spriteTex(g => { g.fillStyle = '#7fbf6e'; g.beginPath(); g.ellipse(32, 32, 26, 13, 0.6, 0, PI * 2); g.fill(); g.strokeStyle = '#5c9a52'; g.lineWidth = 3; g.beginPath(); g.moveTo(12, 46); g.lineTo(52, 18); g.stroke(); }),
     z: spriteTex(g => { g.fillStyle = '#8a7fd6'; g.font = 'bold 50px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('z', 32, 34); }),
   };
   const sparks = [];
@@ -333,6 +334,29 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     draw: { title: 'Draw in the sketchbook', cost: 0.02, mood: 'happy', *run() { yield* kidsSit(); inHand(prop('crayon')); yield* wait(4.5, t => scribble(t)); } },
     colour: { title: 'Colour with crayons', cost: 0.02, mood: 'happy', *run() { yield* kidsSit(); inHand(prop('crayon')); yield* wait(4.5, t => scribble(t, 1.8)); } },
     doodle: { title: 'Doodle and show it off', cost: 0.02, mood: 'happy', *run() { yield* kidsSit(); const c = inHand(prop('crayon')); yield* wait(2.5, t => scribble(t)); c.removeFromParent(); const p = inHand(prop('paper')); p.position.set(0.06, -0.26, 0.06); p.rotation.x = PI / 2; yield* wait(2.5, () => { A.aLx = A.aRx = -2.4; A.aLs = A.aRs = 0; A.headX = 0; }); emit('spark', mouth(), { n: 5, spread: 0.2, v: [0, 0.3, 0], life: 1, size: 0.06 }); } },
+    // the backyard
+    swing: { title: 'Swing on the swing!', cost: 0.08, mood: 'happy', *run() { yield* swingRide(0.55, 7); } },
+    swingHigh: { title: 'Swing really high! Wheee!', cost: 0.14, mood: 'happy', *run() { yield* swingRide(0.95, 8, true); } },
+    smellFlowers: { title: 'Smell the flowers', cost: -0.02, mood: 'happy', *run(spot) {
+      yield* faceSpot(spot); yield* blend({ pitch: 0.3, headX: 0.35 }, 0.6);
+      yield* wait(2.5, (k, t, dt) => { A.headZ = Math.sin(t * 2) * 0.1; emitEvery(dt, 1.5, 'heart', mouth(), { v: [0, 0.3, 0], vr: 0.1, life: 1.3, size: 0.05 }); });
+      yield* blend({ pitch: 0, headX: 0, headZ: 0 }, 0.4); } },
+    waterFlowers: { title: 'Water the flowers', cost: 0.02, mood: 'happy', *run(spot) {
+      yield* faceSpot(spot); inHand(prop('can')); const at = boxTop(spot), [fx, fz] = forward(A.h);
+      at.set(A.x + fx * 0.45, 0.3, A.z + fz * 0.45);
+      yield* wait(4.5, (k, t, dt) => { A.aRx = -1.5; A.aRs = 0; A.h += Math.sin(t * 1.5) * 0.004; emitEvery(dt, 20, 'drop', at.set(A.x + Math.sin(A.h) * 0.45, 0.32, A.z + Math.cos(A.h) * 0.45), { spread: 0.06, v: [0, -0.3, 0], grav: 2, life: 0.5, size: 0.025 }); }); } },
+    treeShake: { title: 'Shake the apple tree', cost: 0.06, mood: 'happy', *run(spot) {
+      const crown = room.yard.tree.crown; cleanups.push(() => { crown.rotation.set(0, 0, 0); });
+      yield* faceSpot(spot); const top = W(room.yard.tree.x, 1.9, room.yard.tree.z);
+      yield* wait(3, (k, t, dt) => { handsForward(t, 0.4); A.roll = Math.sin(t * 18) * 0.05; crown.rotation.z = Math.sin(t * 18) * 0.06 * (1 - k); crown.rotation.x = Math.cos(t * 15) * 0.04 * (1 - k); emitEvery(dt, 6, 'leaf', top, { spread: 0.5, v: [0, -0.3, 0], vr: 0.25, grav: 0.4, life: 2.2, size: 0.07 }); });
+      crown.rotation.set(0, 0, 0); } },
+    treeHug: { title: 'Hug the tree', cost: -0.02, mood: 'happy', *run(spot) {
+      yield* faceSpot(spot); yield* wait(3, (k, t, dt) => { A.aLx = A.aRx = -1.4; A.aLs = A.aRs = -0.3; A.headZ = 0.25; A.roll = Math.sin(t * 2) * 0.06; emitEvery(dt, 1.5, 'heart', mouth(), { v: [0, 0.35, 0], vr: 0.1, life: 1.3, size: 0.06 }); }); } },
+    grassClouds: { title: 'Watch the clouds go by', cost: -0.1, *run() { yield* floorLie(false); yield* wait(5, t => { A.aLx = A.aRx = -2.8; A.aLs = A.aRs = 0.9 + Math.sin(t) * 0.1; A.legL = Math.sin(t * 1.3) * 0.2; }); yield* getUp(); } },
+    cartwheel: { title: 'Do a cartwheel!', cost: 0.12, mood: 'happy', *run() {
+      const [fx, fz] = forward(A.h + PI / 2), x0 = A.x, z0 = A.z;
+      yield* wait(1.2, k => { const e = ease(k); A.roll = -e * PI * 2; A.x = x0 + fx * 0.6 * e; A.z = z0 + fz * 0.6 * e; A.y = 0.01 + Math.sin(PI * k) * 0.35; A.aLx = A.aRx = -2.9; A.legL = 0.4; A.legR = -0.4; });
+      limbsRest(); A.roll = 0; A.y = 0.01; emit('spark', mouth(), { n: 6, spread: 0.2, v: [0, 0.3, 0], life: 1, size: 0.06 }); yield* wait(0.5, () => { A.aLx = A.aRx = -2.6; A.aLs = A.aRs = 0.6; }); } },
     // wardrobes
     wear: { title: 'Wear these clothes', cost: 0.01, mood: 'happy', *run(spot) {
       const p = spot.it.obj.getWorldPosition(new THREE.Vector3());
@@ -394,6 +418,21 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       emitEvery(dt, 8, 'drop', handAt(), { spread: 0.04, v: [0, 0.4, 0], vr: 0.35, grav: 4, life: 0.5, size: 0.02 });
     });
     limbsRest();
+  }
+  // the swing: she sits on the seat facing the house, holds the ropes and swings to and fro
+  function* swingRide(amp, sec, cheer = false) {
+    const s = room.yard.swing, piv = s.pivot, c = W(s.x, s.y, s.z);
+    cleanups.push(() => { piv.rotation.x = 0; });
+    yield* sit({ x: c.x, y: s.y - s.len + 0.02, z: c.z, h: 0 });
+    yield* wait(sec, (k, t, dt) => {
+      const a = Math.sin(t * 2.6) * amp * Math.min(1, t / 2) * Math.min(1, (1 - k) * 4);
+      piv.rotation.x = a;
+      A.z = c.z - Math.sin(a) * s.len; A.y = s.y - Math.cos(a) * s.len + 0.02 - 0.13; A.pitch = a;
+      A.legL = A.legR = -1.35 - 0.4 * Math.cos(t * 2.6);
+      A.aLx = A.aRx = -2.7; A.aLs = A.aRs = 0.15;
+      if (cheer && Math.abs(a) > amp * 0.8) emitEvery(dt, 3, 'spark', mouth(), { v: [0, 0.3, 0], vr: 0.2, life: 0.8, size: 0.05 });
+    });
+    piv.rotation.x = 0; A.pitch = 0; A.z = c.z; A.y = s.y - s.len + 0.02 - 0.13; A.legL = A.legR = -1.35;
   }
   function* funnyFaces() {
     for (const f of ['angry', 'sad', 'bored', 'happy', 'angry', 'happy']) { feelings.set(f, 2); yield* wait(0.6, (k, t) => { A.headZ = Math.sin(t * 9) * 0.2; }); }
@@ -512,6 +551,13 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     { box: box(4.38, 4.94, 0, 0.8, 8.2, 9.3), acts: ['type', 'video'] },
     { box: box(6.05, 7.35, 0, 0.7, 10.06, 10.6), acts: ['draw', 'colour', 'doodle'] },
     { box: box(4.36, 4.64, 0, 1.66, 7.78, 8.06), acts: ['lampPlay'] },
+    // the backyard
+    ...(room.yard ? [
+      { box: box(room.yard.swing.x - 0.3, room.yard.swing.x + 0.3, 0, 0.6, room.yard.swing.z - 0.15, room.yard.swing.z + 0.15), acts: ['swing', 'swingHigh'] },
+      { box: box(room.yard.bed[0], room.yard.bed[1], 0, 0.5, room.yard.bed[2], room.yard.bed[3]), acts: ['smellFlowers', 'waterFlowers'] },
+      { box: box(room.yard.tree.x - 0.15, room.yard.tree.x + 0.15, 0, 1.4, room.yard.tree.z - 0.15, room.yard.tree.z + 0.15), acts: ['treeShake', 'treeHug'], reach: 0.45 },
+      { box: box(3.9, 9.4, 0, 0.03, -3.8, 0), acts: ['grassClouds', 'cartwheel', 'rugRoll', 'rugHop'], rug: true },
+    ] : []),
   ];
   // the movable things: wherever they have been put
   const kidsChair = named('chair').find(c => c.obj.scale.x < 0.9);

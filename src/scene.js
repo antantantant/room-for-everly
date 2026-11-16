@@ -23,6 +23,9 @@ const CX = XE / 2, CZ = ZK / 2;
 const LIVING_WIN = [1.3, 2.7, 0.9, 2.25], BED_WIN = [7.15, 8.25, 1.2, 2.3], KIDS_WIN = [12.05, 13.15, 0.85, 2.25];
 // doorways: [from, to] along their wall
 const HALL_DOOR = [3.95, 4.8], EN_SUITE = [6.7, 7.6], DOOR5 = [3.95, 4.8], KIDS_DOOR = [10.25, 11.15];
+// the backyard, south of the kitchen (z below 0), and its door in the south wall beside the fridge
+export const YARD = { x0: 3.9, x1: 9.4, z0: -3.8, z1: 0 };
+const YARD_DOOR = [8.25, 9.1];
 
 // The sun moves: buildScene().setSun(minutes) places it. Sunrise is minute 0.
 // It climbs the way it does at Tuscany's latitude: about 0.18 degrees a minute
@@ -38,7 +41,8 @@ export const views = {
   bedroom:  [w(3.5, 1.65, 9.65), w(0.7, 0.8, 7.0)],
   bathroom: [w(5.3, 1.75, 8.15), w(7.4, 0.95, 6.25)],
   kids:     [w(5.5, 1.6, 13.2), w(8.6, 0.9, 10.9)],
-  plan:     [[0, 19, 0.001], [0, 0, 0]],
+  yard:     [w(2.3, 2.5, -0.6), w(7.0, 0.4, -2.1)],
+  plan:     [[0, 22, -1.899], [0, 0, -1.9]],
 };
 
 export function buildScene(scene, renderer) {
@@ -672,7 +676,7 @@ export function buildScene(scene, renderer) {
   sun.shadow.normalBias = 0.015;
   sun.shadow.radius = 2;
   // The sun comes from the east (-x), so its shadow camera spans the home's whole north-south length.
-  const sunBox = { left: -7.4, right: 7.4, top: 2.8, bottom: -2.8, near: 0.5, far: 30 };
+  const sunBox = { left: -11, right: 11, top: 2.8, bottom: -2.8, near: 0.5, far: 30 };
   Object.assign(sun.shadow.camera, sunBox);
   scene.add(sun, sun.target);
 
@@ -746,7 +750,7 @@ export function buildScene(scene, renderer) {
     const ops = openings.map(([p, q, y0, y1]) => [Math.min(local(p), local(q)), Math.max(local(p), local(q)), y0, y1]);
     wall(Math.abs(b - a), ops, axis === 'x' ? mid : at, axis === 'x' ? at : mid, rotY);
   }
-  outer('x', 0, 0, XE, 1);                                         // south: the kitchen and the sofa
+  outer('x', 0, 0, XE, 1, [[YARD_DOOR[0], YARD_DOOR[1], 0, DOOR_H]]);   // south: the kitchen and the sofa; the back door
   outer('z', XE, 0, ZK, -1);                                       // west
   outer('x', ZK, XB, XE, -1);                                      // the kids' room, north
   outer('z', XB, ZH2, ZK, 1, [KIDS_WIN]);                          // the kids' room, east, over the courtyard
@@ -1365,7 +1369,7 @@ export function buildScene(scene, renderer) {
     return g;
   }
   // each door swings between shut (lying along its wall) and open; they all start open
-  const door = (g, shut, open) => switchable(g, 'door', k => { g.rotation.y = shut + (open - shut) * k; }, { on: true, speed: 1.4 });
+  const door = (g, shut, open, on = true) => switchable(g, 'door', k => { g.rotation.y = shut + (open - shut) * k; }, { on, speed: 1.4 });
   door(doorLeaf(HALL_DOOR[0] + 0.02, ZM + T / 2, HALL_DOOR[1] - HALL_DOOR[0] - 0.02, 0), 0, -Math.PI / 2 + 0.12);     // swings into the bedroom
   door(doorLeaf(DOOR5[1] - 0.02, ZN - T / 2, DOOR5[1] - DOOR5[0] - 0.02, 0), Math.PI, Math.PI / 2 + 0.12);         // door 5, also into the bedroom, hung on its west side so it folds back beside the desk
   door(doorLeaf(XB + T / 2, KIDS_DOOR[0] + 0.02, KIDS_DOOR[1] - KIDS_DOOR[0] - 0.02, 0), -Math.PI / 2, -0.12);      // into the kids' room
@@ -1586,6 +1590,121 @@ export function buildScene(scene, renderer) {
       ball(1, paint(c), dx, h, 0, v, 0.022, 0.032, 0.022);
     });
   }
+
+
+  // ---------- the backyard, through a door in the kitchen's south wall ----------
+  // A lawn behind a white picket fence: stepping stones from the door, a swing, a little
+  // apple tree, a flower bed along the far fence, a ball and a watering can. Beyond the
+  // fence the view outside shows, as it does through the windows.
+  // Outdoors the whole sky lights things, not just the sun: the yard's own materials glow
+  // softly with their colour as the sky brightens (setSun turns this up), and are matte.
+  const yard = {}, yardMats = [];
+  const yardMat = (color, map = null) => { const m = new THREE.MeshStandardMaterial({ color, map, roughness: 0.9, emissive: map ? 0xffffff : color, emissiveMap: map, emissiveIntensity: 0 }); yardMats.push(m); return m; };
+  {
+    const { x0, x1, z0, z1 } = YARD, w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+    const grassTex = tex(512, 512, (g, s) => {
+      g.fillStyle = '#8fd277'; g.fillRect(0, 0, s, s);
+      for (let i = 0; i < 9000; i++) {
+        const x = rand() * s, y = rand() * s;
+        g.strokeStyle = rand() < 0.5 ? 'rgba(62,128,66,0.35)' : 'rgba(214,246,180,0.35)';
+        g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rand() - 0.5) * 4, y - 4 - rand() * 6); g.stroke();
+      }
+      for (let i = 0; i < 30; i++) {                      // daisies
+        const x = rand() * s, y = rand() * s;
+        g.fillStyle = rand() < 0.6 ? '#ffffff' : '#ffd6e4'; g.beginPath(); g.arc(x, y, 3.2, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#ffd34d'; g.beginPath(); g.arc(x, y, 1.3, 0, Math.PI * 2); g.fill();
+      }
+    }, w / 1.6, d / 1.6);
+    const lawn = add(new THREE.PlaneGeometry(w, d), yardMat(0xffffff, grassTex), cx, 0.002, cz);
+    lawn.rotation.x = -Math.PI / 2;
+    lawn.castShadow = false;
+    add(new THREE.BoxGeometry(w, 0.3, d), mat(0x2a2326), cx, -0.152, cz).castShadow = false;   // the plot's earth, like the house's base
+
+    // stepping stones from the door
+    const stone = yardMat(0xe8e1d6);
+    [[8.67, -0.42, 0.2], [8.5, -0.95, 0.8], [8.18, -1.42, 0.3], [7.75, -1.8, 1.1]].forEach(([x, z, r]) => {
+      const s = cyl(0.2, 0.21, 0.03, stone, x, 0.015, z); s.scale.z = 0.75; s.rotation.y = r;
+    });
+
+    // the white picket fence round three sides
+    const white = yardMat(0xf4eee8), pickets = [], picket = new THREE.BoxGeometry(0.07, 0.72, 0.022), tip = new THREE.ConeGeometry(0.05, 0.08, 4).rotateY(Math.PI / 4);
+    const tips = [], q0 = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
+    const run = (ax, az, bx, bz) => {
+      const L = Math.hypot(bx - ax, bz - az), n = Math.round(L / 0.14), rotY = Math.atan2(-(bz - az), bx - ax);
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+      for (let i = 0; i <= n; i++) {
+        const x = ax + (bx - ax) * i / n, z = az + (bz - az) * i / n;
+        pickets.push(new THREE.Matrix4().compose(new THREE.Vector3(x, 0.36, z), q, one));
+        tips.push(new THREE.Matrix4().compose(new THREE.Vector3(x, 0.76, z), q0, one));
+      }
+      for (const y of [0.2, 0.55]) { const r = box(L, 0.05, 0.025, white, (ax + bx) / 2, y, (az + bz) / 2); r.rotation.y = rotY; r.translateZ(0.025); }
+    };
+    run(x0 + 0.04, z0 + 0.04, x1 - 0.04, z0 + 0.04);
+    run(x0 + 0.04, z0 + 0.04, x0 + 0.04, z1 - 0.02);
+    run(x1 - 0.04, z0 + 0.04, x1 - 0.04, z1 - 0.02);
+    scatter(picket, white, pickets, root);
+    scatter(tip, white, tips, root);
+
+    // the view outside, behind the fence (seen only from inside the yard)
+    const sky = (wd, x, z, rotY) => {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(wd, H), portalMat);
+      p.position.set(x, H / 2, z); p.rotation.y = rotY; p.renderOrder = -2;
+      root.add(p); hideFromAO.push(p);
+    };
+    sky(w, cx, z0 - 0.02, 0);
+    sky(d, x0 - 0.02, cz, Math.PI / 2);
+    sky(d, x1 + 0.02, cz, -Math.PI / 2);
+
+    // the flower bed along the far fence
+    const bx0 = 5.5, bx1 = 9.15, bz0 = z0 + 0.12, bz1 = z0 + 0.5;
+    const edge = yardMat(0xf2e6d8);
+    box(bx1 - bx0, 0.16, 0.04, edge, (bx0 + bx1) / 2, 0.08, bz1);
+    for (const x of [bx0, bx1]) box(0.04, 0.16, bz1 - bz0, edge, x, 0.08, (bz0 + bz1) / 2);
+    box(bx1 - bx0 - 0.04, 0.12, bz1 - bz0 - 0.02, yardMat(0x6b4f3c), (bx0 + bx1) / 2, 0.06, (bz0 + bz1) / 2);
+    const stems = [], heads = { 0xf47aa0: [], 0xffffff: [], 0xffd34d: [], 0xc9a8f0: [], 0xf9a8c8: [] }, colours = Object.keys(heads);
+    for (let x = bx0 + 0.1; x < bx1 - 0.06; x += 0.11) for (const f of [0.3, 0.72]) {
+      const z = bz0 + (bz1 - bz0) * f + (rand() - 0.5) * 0.06, h = 0.3 + rand() * 0.22, xx = x + (rand() - 0.5) * 0.05;
+      stems.push(new THREE.Matrix4().compose(new THREE.Vector3(xx, 0.12 + h / 2, z), q0, new THREE.Vector3(1, h, 1)));
+      heads[colours[(rand() * colours.length) | 0]].push(new THREE.Matrix4().compose(new THREE.Vector3(xx, 0.12 + h, z), q0, new THREE.Vector3(1, 0.7, 1)));
+    }
+    scatter(new THREE.CylinderGeometry(0.005, 0.005, 1, 5), yardMat(0x6fae7c), stems, root);
+    for (const c of colours) scatter(new THREE.SphereGeometry(0.035, 10, 8), yardMat(+c), heads[c], root);
+    yard.bed = [bx0, bx1, bz0, bz1];
+
+    // a little apple tree in the corner
+    const tg = group(4.75, 0, z0 + 0.95);
+    cyl(0.08, 0.12, 1.5, yardMat(0x9b7357), 0, 0.75, 0, tg);
+    const crown = group(0, 1.55, 0, 0, tg), leaves = yardMat(0x86c46f), apple = yardMat(0xe0404f);
+    [[0, 0.35, 0, 0.6], [0.38, 0.1, 0.1, 0.42], [-0.35, 0.15, -0.1, 0.45], [0.05, 0.05, 0.38, 0.42], [0, 0.12, -0.38, 0.4], [0.1, 0.72, 0.05, 0.4]].forEach(([x, y, z, r]) => ball(r, leaves, x, y, z, crown));
+    for (let i = 0; i < 9; i++) { const a = i * 2.4, y = 0.05 + (i % 3) * 0.28; ball(0.05, apple, Math.cos(a) * 0.55, y, Math.sin(a) * 0.55, crown); }
+    live.add(crown);
+    yard.tree = { obj: tg, crown, x: 4.75, z: z0 + 0.95 };
+
+    // the swing: an A-frame, the seat hanging from a pivot so it can swing
+    const sx = 6.5, sz = -1.75, top = 1.85, len = 1.4, frame = yardMat(0xf2a9be);
+    for (const ex of [sx - 0.72, sx + 0.72]) for (const s of [-1, 1]) {
+      const leg = cyl(0.035, 0.04, Math.hypot(top, 0.5), frame, ex, top / 2, sz + s * 0.25);
+      leg.rotation.x = -s * Math.atan2(0.5, top);
+    }
+    cyl(0.04, 0.04, 1.56, frame, sx, top, sz).rotation.z = Math.PI / 2;
+    const pivot = group(sx, top, sz);
+    for (const dx of [-0.2, 0.2]) cyl(0.008, 0.008, len, edge, dx, -len / 2, 0, pivot);
+    soft(0.5, 0.04, 0.22, 0.015, white, 0, -len, 0, pivot);
+    live.add(pivot);
+    yard.swing = { pivot, x: sx, z: sz, y: top, len };
+
+    // things to play with
+    const ballG = pickable(group(7.7, 0, -0.95), 'ball');
+    ball(0.11, mat(0xf48fb1, null, { roughness: 0.4 }), 0, 0.11, 0, ballG);
+    ball(0.112, mat(0xffffff, null, { roughness: 0.4 }), 0, 0.11, 0, ballG, 1, 0.25, 1);
+    const can = pickable(group(9.0, 0, z0 + 0.75, -0.6), 'watering can');
+    cyl(0.08, 0.09, 0.16, paint(0x8fd3c4), 0, 0.08, 0, can);
+    cyl(0.01, 0.016, 0.2, paint(0x8fd3c4), 0, 0.15, 0.13, can).rotation.x = 0.9;
+    add(new THREE.TorusGeometry(0.06, 0.01, 8, 20, Math.PI), paint(0x8fd3c4), 0, 0.16, -0.02, can).rotation.y = Math.PI / 2;
+  }
+  // the back door, hung on its west side; it starts shut
+  doorTrim('x', 0, YARD_DOOR);
+  door(doorLeaf(YARD_DOOR[1] - 0.02, 0.03, YARD_DOOR[1] - YARD_DOOR[0] - 0.02, 0), Math.PI, 1.5 * Math.PI - 0.12, false);
 
   // ---------- the hallway from the living room to the main bedroom ----------
   soft(0.8, 0.012, 1.2, 0.004, mat(0xffffff, dotsTex('#f9c6d4', '#ffffff', 2, 3)), (XH + XB) / 2, 0.006, (ZL + ZM) / 2).castShadow = false;
@@ -2047,6 +2166,9 @@ export function buildScene(scene, renderer) {
   const { lerp, smoothstep: ramp, DEG2RAD } = THREE.MathUtils;
   const blend = (out, a, b, t) => out.setRGB(lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t));
   const landBase = new THREE.Color(0x7a8348);
+  // outdoors (0 to 1): with the view out in the yard, the open sky lights things more
+  let outK = 0, baseSky = 0.03, baseEnv = 0.06;
+  const applyOutdoors = () => { skyFill.intensity = baseSky * (1 + 6 * outK); scene.environmentIntensity = baseEnv * (1 + 2 * outK); };
   function setSun(minutes) {
     const el = 0.183 * minutes, az = 1.5 + 0.17 * minutes;                     // degrees up, degrees south of east
     sunDir.set(-Math.cos(az * DEG2RAD) * Math.cos(el * DEG2RAD), Math.sin(el * DEG2RAD), -Math.sin(az * DEG2RAD) * Math.cos(el * DEG2RAD));   // -x east, -z south
@@ -2059,9 +2181,11 @@ export function buildScene(scene, renderer) {
     sun.position.copy(sunDir).multiplyScalar(14).add(sun.target.position);
     sun.updateMatrix();
     sun.updateMatrixWorld(true);
-    skyFill.intensity = lerp(0.03, 0.1, dawn);
+    baseSky = lerp(0.03, 0.1, dawn);
     for (const [light, full] of bounces) light.intensity = full * power / 11;
-    scene.environmentIntensity = lerp(0.06, 0.3, dawn);
+    baseEnv = lerp(0.06, 0.3, dawn);
+    applyOutdoors();
+    for (const m of yardMats) m.emissiveIntensity = lerp(0.02, 0.32, dawn);
 
     blend(sky.uZenith.value, [0.004, 0.008, 0.03], [0.02, 0.04, 0.14], dawn);
     blend(sky.uHorizon.value, [0.09, 0.03, 0.03], [0.5, 0.23, 0.11], dawn);
@@ -2101,5 +2225,5 @@ export function buildScene(scene, renderer) {
   setSun(SUNRISE.start);
   renderSunDepth();
 
-  return { hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ } };
+  return { get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard };
 }
