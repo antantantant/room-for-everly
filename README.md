@@ -1,10 +1,12 @@
 # Room for Everly
 
-A 3D model of Everly's home, built from her hand-drawn top-view sketch, in pastel pink with a My Melody theme.
+A 3D model of Everly's house, built from her hand-drawn top-view sketch, in pastel pink with a My Melody theme.
 
 **Live:** https://antantantant.github.io/room-for-everly/
 
-## The home
+## The house
+
+It is a one-storey house standing in its own garden on top of a hill: the windows look out over the lawn, a hedge, round trees and the neighbours' cottages, with the castle beyond. From the backyard you see the back of the house: pink-and-cream clapboard, shuttered windows with flower boxes, a lantern by the back door, and a rose-pink shingle roof with a chimney (the roof only shows while you're out in the yard, so it never hides the rooms).
 
 East is the left of the sketch, so every window faces the sunrise:
 

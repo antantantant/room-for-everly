@@ -41,7 +41,7 @@ export const views = {
   bedroom:  [w(3.5, 1.65, 9.65), w(0.7, 0.8, 7.0)],
   bathroom: [w(5.3, 1.75, 8.15), w(7.4, 0.95, 6.25)],
   kids:     [w(5.5, 1.6, 13.2), w(8.6, 0.9, 10.9)],
-  yard:     [w(2.3, 2.5, -0.6), w(7.0, 0.4, -2.1)],
+  yard:     [w(5.7, 1.5, -3.6), w(7.5, 1.7, 0.2)],
   plan:     [[0, 22, -1.899], [0, 0, -1.9]],
 };
 
@@ -541,8 +541,8 @@ export function buildScene(scene, renderer) {
   });
 
 
-  // The land outside. The room is high in a building on the cliff edge of a
-  // hilltop town, so the country lies far below: a ring of distant ridges on the
+  // The land outside. The house stands in its own garden on the top of a hill, so
+  // past the lawn the country falls away below: a ring of distant ridges on the
   // horizon, then the valley floor falling away beneath the window, a patchwork
   // of fields, vineyards, white roads and farmhouses. Painted on a clear
   // background; the sky, the clouds and the light on the land come from the shader.
@@ -615,20 +615,23 @@ export function buildScene(scene, renderer) {
     g.globalCompositeOperation = 'source-over';
   });
 
-  // The neighbours to the south: plaster fronts with shuttered windows, pantile roofs.
-  const facadeTex = tex(512, 512, (g, s) => {
-    g.fillStyle = '#e9dcc4'; g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 500; i++) {                       // weathering
-      g.fillStyle = rand() < 0.5 ? 'rgba(255,245,225,0.06)' : 'rgba(120,90,60,0.06)';
-      g.beginPath(); g.arc(rand() * s, rand() * s, 8 + rand() * 50, 0, Math.PI * 2); g.fill();
+  // The house's outside: painted clapboard, one metre of it per tile (six boards).
+  const sidingTex = tex(256, 256, (g, s) => {
+    for (let i = 0; i < 6; i++) {
+      const y = i * s / 6, b = g.createLinearGradient(0, y, 0, y + s / 6);
+      b.addColorStop(0, '#fff1ea'); b.addColorStop(0.85, '#f9dfd6'); b.addColorStop(1, '#d9b8b0');
+      g.fillStyle = b; g.fillRect(0, y, s, s / 6);
     }
-    for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) {
-      const x = 64 + c * 170, y = 34 + r * 124, ww = 48, wh = 78;
-      g.fillStyle = '#cbbd9f'; g.fillRect(x - 8, y - 8, ww + 16, wh + 18);         // stone surround
-      g.fillStyle = '#1d2228'; g.fillRect(x, y, ww, wh);                           // dark glass
-      g.fillStyle = (r + c) % 3 ? '#4f6a4a' : '#6b4a33';                           // shutters, some folded back
-      if ((r * 3 + c) % 4 === 1) g.fillRect(x, y, ww, wh);
-      else { g.fillRect(x - 26, y, 24, wh); g.fillRect(x + ww + 2, y, 24, wh); }
+    for (let i = 0; i < 300; i++) { g.fillStyle = 'rgba(160,120,110,0.05)'; g.fillRect(rand() * s, rand() * s, 20 + rand() * 60, 1); }
+  });
+  // Roof shingles, rose pink, in staggered rows (half a metre per tile).
+  const shingleTex = tex(256, 256, (g, s) => {
+    g.fillStyle = '#c96f86'; g.fillRect(0, 0, s, s);
+    for (let r = 0; r < 8; r++) for (let c = -1; c < 9; c++) {
+      const x = (c + (r % 2) * 0.5) * s / 8, y = r * s / 8;
+      g.fillStyle = `hsl(${342 + rand() * 8}, ${45 + rand() * 12}%, ${60 + rand() * 10}%)`;
+      g.beginPath(); g.moveTo(x + 1, y); g.lineTo(x + s / 8 - 1, y); g.lineTo(x + s / 8 - 1, y + s / 8 - 4);
+      g.quadraticCurveTo(x + s / 16, y + s / 8 + 2, x + 1, y + s / 8 - 4); g.fill();
     }
   });
   // The castle's walls: pale dressed stone, coursed in blocks.
@@ -881,7 +884,6 @@ export function buildScene(scene, renderer) {
       townMats.push([m, new THREE.Color(tint)]);
       return m;
     };
-    const street = -9;                                                                 // how far below our floor the lane is
     const stone = openAir(stoneTex, 0xf0ebe2), rock = openAir(null, 0x8a8474), slate = openAir(null, 0x5c6c96);
     const lit = seenThrough(new THREE.MeshBasicMaterial({ color: 0xffc06a }));
     const water = seenThrough(new THREE.MeshStandardMaterial({ color: 0x2f4a6c, roughness: 0.12, metalness: 0.3, emissive: 0x000000 }));
@@ -929,20 +931,71 @@ export function buildScene(scene, renderer) {
     tower(-13.5, -8.8, 0.9, -4, 7, 3.2);
     tower(-16, -13.4, 1.1, -4, 9.5, 4.2);
     wall(-13.2, -12.8, -9.6, -4, 2.6);
+    // Our garden: a lawn all round the house out to a hedge at the hilltop's edge, a few
+    // round trees, and the neighbours' cottages along the hill. Past the hedge the land
+    // drops away, so only the tops of the castle's crags show above it.
+    {
+      const lawnTex = tex(256, 256, (g, s) => {
+        g.fillStyle = '#86c96e'; g.fillRect(0, 0, s, s);
+        for (let i = 0; i < 3000; i++) { g.fillStyle = rand() < 0.5 ? 'rgba(60,120,60,0.25)' : 'rgba(210,245,170,0.25)'; g.fillRect(rand() * s, rand() * s, 1.5, 4); }
+        for (let i = 0; i < 6; i++) { g.fillStyle = '#ffffff'; g.beginPath(); g.arc(rand() * s, rand() * s, 2, 0, Math.PI * 2); g.fill(); }
+      }, 24, 24);
+      const lawn = new THREE.Mesh(new THREE.CircleGeometry(17, 64), openAir(lawnTex, 0xffffff));
+      lawn.rotation.x = -Math.PI / 2;
+      lawn.position.y = -0.02;
+      lawn.renderOrder = -1;
+      outside.add(lawn);
+      const hedgeMat = openAir(null, 0x4f8a4e), leafMat = openAir(null, 0x6aa95c), trunkMat = openAir(null, 0x8a6a50);
+      const hedge = new THREE.Mesh(new THREE.CylinderGeometry(16.6, 16.6, 1.1, 96, 1, true), hedgeMat);
+      hedge.position.y = 0.53;
+      hedge.material.side = THREE.DoubleSide;
+      outside.add(hedge);
+      const at = (o, a, r, y = 0) => { o.position.set(Math.cos(a) * r, y, Math.sin(a) * r); outside.add(o); return o; };
+      // round trees, kept off the line to the sunrise (due east is -x: angle PI)
+      for (const [a, r, s] of [[1.9, 13, 1.2], [2.5, 15, 1.4], [3.95, 14, 1.3], [4.65, 12.5, 1.0], [1.3, 14, 1.4], [0.6, 13.5, 1.2], [5.2, 14.5, 1.5], [5.9, 13, 1.1]]) {
+        at(new THREE.Mesh(new THREE.CylinderGeometry(0.12 * s, 0.16 * s, 1.6 * s, 8), trunkMat), a, r, 0.8 * s);
+        at(new THREE.Mesh(new THREE.SphereGeometry(1.1 * s, 16, 12), leafMat), a, r, 2.1 * s);
+      }
+      // two cottages along the hilltop, north-east and south-east
+      const wallM = openAir(sidingTex, 0xfff4e8), roofM = openAir(shingleTex, 0xc8d8f0);
+      for (const [a, r, rot] of [[2.15, 14.2, 0.5], [4.25, 14.4, -0.6]]) {
+        const c = at(new THREE.Group(), a, r);
+        c.rotation.y = rot;
+        const body = new THREE.Mesh(new THREE.BoxGeometry(4, 2.6, 3), wallM);
+        body.position.y = 1.3;
+        const gable = new THREE.Shape([new THREE.Vector2(-1.8, 0), new THREE.Vector2(1.8, 0), new THREE.Vector2(0, 1.6)]);
+        const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(gable, { depth: 4.4, bevelEnabled: false }), roofM);
+        roof.rotation.y = Math.PI / 2;
+        roof.position.set(-2.2, 2.6, 0);
+        const lit = (x, z, ry) => { const w = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.8), seenThrough(new THREE.MeshBasicMaterial({ color: 0xffc06a }))); w.position.set(x, 1.5, z); w.rotation.y = ry; c.add(w); };
+        lit(-0.9, 1.51, 0); lit(0.9, 1.51, 0); lit(-0.9, -1.51, Math.PI); lit(0.9, -1.51, Math.PI);
+        c.add(body, roof);
+      }
+    }
     // the lake below, catching the sky
     put(new THREE.CircleGeometry(9, 48), water, -15, -9.8, 0).rotation.x = -Math.PI / 2;
 
-    // Our own building, seen across the courtyard from the kids' window: the outside
-    // faces of the main bedroom and the little hall, running down to the lane.
+    // Our own house, seen across the courtyard from the kids' window: the outside
+    // faces of the main bedroom and the little hall, clapboard from the lawn up to the
+    // eaves, with the edge of the pink roof hanging over them.
+    const eaveMat = openAir(shingleTex, 0xffffff), fascia = openAir(null, 0xfdf6f0);
     const outFace = (w, x, z, rotY) => {
-      const h = H + 0.4 - street, t = facadeTex.clone();
+      const h = H + 0.2, t = sidingTex.clone();
       t.needsUpdate = true;
-      t.repeat.set(w / 4, h / 4);
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), openAir(t, 0xf4e1d6));
-      m.position.set(x, (H + 0.4 + street) / 2, z);
-      m.rotation.y = rotY;
-      root.add(m);
-      hideFromAO.push(m);
+      t.repeat.set(w, h);
+      const f = new THREE.Group();
+      f.position.set(x, 0, z);
+      f.rotation.y = rotY;
+      root.add(f);
+      hideFromAO.push(f);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), openAir(t, 0xffffff));
+      m.position.y = h / 2;
+      const board = new THREE.Mesh(new THREE.BoxGeometry(w + 0.5, 0.16, 0.04), fascia);
+      board.position.set(0, h + 0.02, 0.42);
+      const eave = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.5, 1.2), eaveMat);
+      eave.position.set(0, h + 0.35, -0.07);
+      eave.rotation.x = -1.05;
+      f.add(m, board, eave);
     };
     outFace(XH2, XH2 / 2, ZN + 0.002, 0);                          // the bedroom's north face
     outFace(ZH2 - ZN, XH2 - 0.002, (ZN + ZH2) / 2, -Math.PI / 2);  // the hall's east face
@@ -1598,7 +1651,7 @@ export function buildScene(scene, renderer) {
   // fence the view outside shows, as it does through the windows.
   // Outdoors the whole sky lights things, not just the sun: the yard's own materials glow
   // softly with their colour as the sky brightens (setSun turns this up), and are matte.
-  const yard = {}, yardMats = [];
+  const yard = {}, yardMats = [], outdoorOnly = [];
   const yardMat = (color, map = null) => { const m = new THREE.MeshStandardMaterial({ color, map, roughness: 0.9, emissive: map ? 0xffffff : color, emissiveMap: map, emissiveIntensity: 0 }); yardMats.push(m); return m; };
   {
     const { x0, x1, z0, z1 } = YARD, w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
@@ -1646,10 +1699,15 @@ export function buildScene(scene, renderer) {
     scatter(tip, white, tips, root);
 
     // the view outside, behind the fence (seen only from inside the yard)
+    // (the part above the walls only while the camera is out in the yard, or it would
+    // show over the rooms in the views from above)
     const sky = (wd, x, z, rotY) => {
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(wd, H), portalMat);
-      p.position.set(x, H / 2, z); p.rotation.y = rotY; p.renderOrder = -2;
-      root.add(p); hideFromAO.push(p);
+      for (const [y0, y1] of [[0, H], [H, 20]]) {
+        const p = new THREE.Mesh(new THREE.PlaneGeometry(wd, y1 - y0), portalMat);
+        p.position.set(x, (y0 + y1) / 2, z); p.rotation.y = rotY; p.renderOrder = -2;
+        root.add(p); hideFromAO.push(p);
+        if (y0) outdoorOnly.push(p);
+      }
     };
     sky(w, cx, z0 - 0.02, 0);
     sky(d, x0 - 0.02, cz, Math.PI / 2);
@@ -1705,6 +1763,70 @@ export function buildScene(scene, renderer) {
   // the back door, hung on its west side; it starts shut
   doorTrim('x', 0, YARD_DOOR);
   door(doorLeaf(YARD_DOOR[1] - 0.02, 0.03, YARD_DOOR[1] - YARD_DOOR[0] - 0.02, 0), Math.PI, 1.5 * Math.PI - 0.12, false);
+
+  // The back of the house, as it looks from the yard: clapboard with the back door in it,
+  // a step, a lamp by the door, window boxes, and a pink shingle roof with a chimney.
+  // The outer walls are inward sheets that vanish from outside, so this skin faces out.
+  // The roof would hide the rooms from the views above, so it shows only while the
+  // camera is out in the yard (setOutdoors).
+  const houseRoof = group(0, 0, 0);
+  {
+    const EH = H + 0.15, [d0, d1] = YARD_DOOR, sh = new THREE.Shape();
+    const lx = v => XE / 2 - v;                                  // plan x to the skin's own x (it faces south)
+    sh.moveTo(-XE / 2, 0); sh.lineTo(lx(d1), 0); sh.lineTo(lx(d1), DOOR_H); sh.lineTo(lx(d0), DOOR_H); sh.lineTo(lx(d0), 0);
+    sh.lineTo(XE / 2, 0); sh.lineTo(XE / 2, EH); sh.lineTo(-XE / 2, EH); sh.closePath();
+    const skinGeo = new THREE.ShapeGeometry(sh), uv = skinGeo.attributes.uv, ps = skinGeo.attributes.position;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, ps.getX(i), ps.getY(i));     // a metre of siding per tile
+    const skin = add(skinGeo, yardMat(0xffffff, sidingTex), XE / 2, 0, -0.004);
+    skin.rotation.y = Math.PI;
+    skin.castShadow = false;
+    // corner boards and the step
+    const trimW = yardMat(0xfdf8f2);
+    for (const x of [0.06, XE - 0.06]) box(0.12, EH, 0.03, trimW, x, EH / 2, -0.02).castShadow = false;
+    box(d1 - d0 + 0.5, 0.12, 0.42, yardMat(0xe8e1d6), (d0 + d1) / 2, 0.06, -0.21);
+    // a lantern by the door, glowing
+    const lg = group(d0 - 0.3, 1.75, -0.04);
+    box(0.1, 0.16, 0.06, gold, 0, 0, -0.03, lg);
+    add(new THREE.BoxGeometry(0.11, 0.16, 0.11), new THREE.MeshBasicMaterial({ color: 0xffd9a0 }), 0, -0.02, -0.1, lg);
+    // painted shutters with window boxes of flowers along the wall (the kitchen and the
+    // sofa are against it inside, so these are blind windows, as on many old houses)
+    const shut = yardMat(0xf2a9be), glassy = yardMat(0xbcd6e6), boxM = yardMat(0xfdf8f2);
+    for (const cx of [2.0, 4.6, 6.6]) {
+      box(0.9, 1.0, 0.02, glassy, cx, 1.5, -0.012).castShadow = false;
+      box(0.98, 0.05, 0.04, trimW, cx, 2.02, -0.02); box(0.98, 0.05, 0.04, trimW, cx, 0.98, -0.02);
+      for (const s of [-1, 1]) box(0.4, 1.06, 0.03, shut, cx + s * 0.68, 1.5, -0.025);
+      box(0.96, 0.16, 0.18, boxM, cx, 0.88, -0.09);
+      for (let k = 0; k < 7; k++) ball(0.05, yardMat([0xff8fb1, 0xfff1a8, 0xffffff, 0xc9a6ff][k % 4]), cx - 0.4 + k * 0.133, 0.99, -0.09);
+    }
+
+    // the roof: two pitched slopes over the front of the house, gables at each end, and a chimney
+    const ov = 0.35, z0 = -0.45, zr = 2.0, z1 = ZL + 0.45, top = EH + 1.4, W = XE + 2 * ov;
+    const slope = (za, ya, zb, yb) => {
+      const L = Math.hypot(zb - za, yb - ya), t = shingleTex.clone();
+      t.needsUpdate = true; t.repeat.set(W / 0.5, L / 0.5);
+      const m = yardMat(0xffffff, t); m.side = THREE.DoubleSide;
+      const o = add(new THREE.PlaneGeometry(W, L), m, XE / 2, (ya + yb) / 2, (za + zb) / 2, houseRoof);
+      o.rotation.x = Math.atan2(zb - za, yb - ya);
+      o.castShadow = false;
+    };
+    slope(z0, EH - 0.1, zr, top);
+    slope(z1, EH - 0.1, zr, top);
+    const gableGeo = new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(-z0, EH), new THREE.Vector2(-z1, EH), new THREE.Vector2(-zr, top - 0.05)]));
+    const gm = yardMat(0xfff1ea); gm.side = THREE.DoubleSide;
+    for (const x of [0, XE]) add(gableGeo, gm, x, 0, 0, houseRoof).rotation.y = Math.PI / 2;
+    const fasciaM = yardMat(0xfdf8f2);
+    box(W, 0.12, 0.05, fasciaM, XE / 2, EH - 0.12, z0 - 0.02, houseRoof);
+    const brick = yardMat(0xd98c8c);
+    box(0.55, 1.6, 0.55, brick, 1.6, top - 0.2, 1.2, houseRoof);
+    box(0.65, 0.1, 0.65, trimW, 1.6, top + 0.62, 1.2, houseRoof);
+    houseRoof.traverse(o => { o.castShadow = false; });
+    live.add(houseRoof);
+    // everything behind the house's back wall, seen from the yard, is the view outside
+    const behind = new THREE.Mesh(new THREE.PlaneGeometry(40, 22), portalMat);
+    behind.position.set(XE / 2, 10.5, -0.03); behind.rotation.y = Math.PI; behind.renderOrder = -2;
+    root.add(behind); hideFromAO.push(behind);
+    outdoorOnly.push(behind, houseRoof);
+  }
 
   // ---------- the hallway from the living room to the main bedroom ----------
   soft(0.8, 0.012, 1.2, 0.004, mat(0xffffff, dotsTex('#f9c6d4', '#ffffff', 2, 3)), (XH + XB) / 2, 0.006, (ZL + ZM) / 2).castShadow = false;
@@ -2224,6 +2346,7 @@ export function buildScene(scene, renderer) {
 
   setSun(SUNRISE.start);
   renderSunDepth();
+  for (const o of outdoorOnly) o.visible = false;
 
-  return { get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard };
+  return { get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); for (const o of outdoorOnly) o.visible = k > 0.5; }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard };
 }
