@@ -29,13 +29,13 @@
   #energy { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; font-size: 13px; opacity: .9; }
   #energy i { display: inline-block; width: 70px; height: 9px; border-radius: 9px; background: rgba(255,255,255,.18); overflow: hidden; }
   #energy b { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #f6a5c0, #ffd36e); transition: width .3s; }
-  #hint { position: fixed; transform: translate(-50%, -100%); padding: 4px 10px; border-radius: 999px; font-size: 13px; white-space: nowrap; pointer-events: none;
+  #hint, #shoehint { position: fixed; transform: translate(-50%, -100%); padding: 4px 10px; border-radius: 999px; font-size: 13px; white-space: nowrap; pointer-events: none;
           color: #5a2a3c; background: rgba(255, 246, 214, .92); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 </style>
 <script>
 // GitHub Pages lets browsers keep this page for ten minutes. If a newer version has
 // been published since, fetch it fresh (which also refreshes the browser's copy) and reload once.
-const BUILD = '17';
+const BUILD = '18';
 fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
   const live = (t.match(/const BUILD = '([^']+)'/) || [])[1];
   if (!live || live === BUILD) return;
@@ -54,11 +54,12 @@ fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
 <body>
 <div id="label">
   <h1>Room for Everly</h1>
-  <p>Arrow keys walk the squirrel · R plays with whatever has a P · Space picks up, puts down, opens and switches · L puts back what she moved · drag to rotate · scroll to zoom</p>
+  <p>Arrow keys walk the squirrel · R plays with whatever has a P · Space picks up, puts down, opens and switches · L puts back what she moved · B puts on or takes off shoes · drag to rotate · scroll to zoom</p>
   <button data-view="overview">Overview</button><button data-view="living">Living room</button><button data-view="bedroom">Bedroom</button><button data-view="bathroom">Bathroom</button><button data-view="kids">Kids' room</button><button data-view="yard">Backyard</button><button data-view="plan">Floor plan</button><button data-view="squirrel">Squirrel</button>
   <div id="feelings"><span>Feelings (1–5)</span><button data-feel="happy">😊 Happy</button><button data-feel="sad">😢 Sad</button><button data-feel="angry">😠 Angry</button><button data-feel="bored">😑 Bored</button><button data-feel="sleepy">😴 Sleepy</button><span id="energy">Energy <i><b id="energyFill"></b></i></span></div>
 </div>
 <div id="hint" hidden></div>
+<div id="shoehint" hidden></div>
 <div id="bubble" hidden>P</div>
 <div id="caption" hidden></div>
 <div id="transport" hidden>
@@ -73,14 +74,15 @@ fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bump ?v= whenever src/ changes: it stops a browser pairing this page with an older cached module.
-import { createPipeline } from './src/pipeline.js?v=17';
-import { buildScene, views, SUNRISE } from './src/scene.js?v=17';
-import { createMusic } from './src/audio.js?v=17';
-import { createSquirrel } from './src/squirrel.js?v=17';
-import { createWalker } from './src/walk.js?v=17';
-import { createFeelings } from './src/feelings.js?v=17';
-import { createInteraction } from './src/interact.js?v=17';
-import { createActivities } from './src/activities.js?v=17';
+import { createPipeline } from './src/pipeline.js?v=18';
+import { buildScene, views, SUNRISE } from './src/scene.js?v=18';
+import { createMusic } from './src/audio.js?v=18';
+import { createSquirrel } from './src/squirrel.js?v=18';
+import { createWalker } from './src/walk.js?v=18';
+import { createFeelings } from './src/feelings.js?v=18';
+import { createInteraction } from './src/interact.js?v=18';
+import { createShoes } from './src/shoes.js?v=18';
+import { createActivities } from './src/activities.js?v=18';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);
@@ -144,6 +146,9 @@ const interaction = createInteraction({ room, squirrel, walker, scene, camera, p
 // R: play with whatever has a P over it (sleep in the bunk bed, bounce on the sofa...)
 activities = createActivities({ room, squirrel, walker, feelings, scene, pipeline, interaction, camera, bubble: document.getElementById('bubble'), caption: document.getElementById('caption') });
 window.__activities = activities;
+// B: put on the shoes by the back door, or take them off again
+const shoes = createShoes({ scene, camera, room, squirrel, walker, isBusy: () => activities.busy, hint: document.getElementById('shoehint') });
+window.__shoes = shoes;
 window.__room = room;
 window.__feelings = feelings;
 window.__interaction = interaction;
@@ -238,6 +243,7 @@ pipeline.start(() => {
   if (room.update(dt).some(it => it.verbs[0] === 'open')) walker.refresh();
   activities.update(dt, step);               // while she is doing something, it poses her (after the walker)
   interaction.update(dt);
+  shoes.update();
   energyFill.style.width = `${Math.round(feelings.energy * 100)}%`;
   controls.update();
   outdoors += (looksOutdoors() - outdoors) * Math.min(1, dt * 2.5);
