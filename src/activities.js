@@ -358,6 +358,9 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       yield* wait(1.2, k => { const e = ease(k); A.roll = -e * PI * 2; A.x = x0 + fx * 0.6 * e; A.z = z0 + fz * 0.6 * e; A.y = 0.01 + Math.sin(PI * k) * 0.35; A.aLx = A.aRx = -2.9; A.legL = 0.4; A.legR = -0.4; });
       limbsRest(); A.roll = 0; A.y = 0.01; emit('spark', mouth(), { n: 6, spread: 0.2, v: [0, 0.3, 0], life: 1, size: 0.06 }); yield* wait(0.5, () => { A.aLx = A.aRx = -2.6; A.aLs = A.aRs = 0.6; }); } },
     // wardrobes
+    ballBounce: { title: 'Bounce the ball', cost: 0.05, mood: 'happy', *run(spot) { yield* ballBounce(spot.it); } },
+    ballKick: { title: 'Kick the ball', cost: 0.05, mood: 'happy', *run(spot) { yield* ballKick(spot.it); } },
+    ballThrow: { title: 'Throw the ball up high', cost: 0.06, mood: 'happy', *run(spot) { yield* ballThrow(spot.it); } },
     wear: { title: 'Wear these clothes', cost: 0.01, mood: 'happy', *run(spot) {
       const p = spot.it.obj.getWorldPosition(new THREE.Vector3());
       yield* faceTo(p.x, p.z);
@@ -524,6 +527,97 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     });
   }
 
+  // ---------- the big ball in the yard: she moves the real ball, and it stays where it lands ----------
+  const ballAt = (it, v) => { it.obj.parent.updateMatrixWorld(); it.obj.position.copy(it.obj.parent.worldToLocal(v.clone())); };
+  const ballPos = it => it.obj.getWorldPosition(new THREE.Vector3());
+  const spinBall = (it, d) => { it.obj.rotation.x += d * 9; };
+  // redraw her map without the ball in it, so it can roll freely from where it was
+  const clearMap = it => { it.obj.visible = false; walker.refresh(); it.obj.visible = true; };
+  // where a ball rolling from `from` along (dx, dz) for up to `dist` can get to before something stops it
+  function rollTo(from, dx, dz, dist) {
+    let ok = 0;
+    for (let d = 0.1; d <= dist; d += 0.1) { if (!walker.isFree(from.x + dx * d, from.z + dz * d, 0.12)) break; ok = d; }
+    return new THREE.Vector3(from.x + dx * ok, 0, from.z + dz * ok);
+  }
+  // bounces from a to b: n hops, each lower than the last, starting `h` high
+  function* bounceAlong(it, a, b, sec, h, n) {
+    let last = 0;
+    yield* wait(sec, k => {
+      const seg = Math.min(n - 1e-6, k * n), i = Math.floor(seg), f = seg - i, hi = h * Math.pow(0.5, i);
+      const p = a.clone().lerp(b, 1 - Math.pow(1 - k, 1.6));
+      p.y = 4 * hi * f * (1 - f);
+      spinBall(it, p.distanceTo(a) - last); last = p.distanceTo(a);
+      ballAt(it, p);
+      if (f < 0.06 && i > 0 && hi > 0.05) emit('puff', p.clone().setY(0.02), { n: 1, spread: 0.08, v: [0, 0.1, 0], life: 0.6, size: 0.08 });
+    });
+    ballAt(it, b);
+  }
+  function* pickUpBall(it) {
+    clearMap(it);
+    const b = ballPos(it);
+    yield* faceTo(b.x, b.z);
+    const [fx, fz] = forward(A.h), d = Math.hypot(b.x - A.x, b.z - A.z);
+    if (d > 0.42) yield* walk(b.x - fx * 0.34, b.z - fz * 0.34);
+    yield* blend({ pitch: 0.45, aLx: -1.0, aRx: -1.0, aLs: -0.25, aRs: -0.25 }, 0.35);
+    const from = ballPos(it);
+    yield* wait(0.4, k => {
+      const [fx2, fz2] = forward(A.h), hand = new THREE.Vector3(A.x + fx2 * 0.22, 0.42, A.z + fz2 * 0.22).sub(new THREE.Vector3(0, 0.11, 0));
+      ballAt(it, from.clone().lerp(hand, ease(k))); A.pitch = 0.45 * (1 - k);
+    });
+  }
+  const handBall = () => { const [fx, fz] = forward(A.h); return new THREE.Vector3(A.x + fx * 0.22, 0.31, A.z + fz * 0.22); };
+  function* ballBounce(it) {
+    yield* pickUpBall(it);
+    const n = 6;
+    yield* wait(n * 0.55, (k, t) => {
+      const ph = (k * n) % 1, top = handBall();
+      top.y = 0.31 * Math.abs(Math.cos(ph * PI));                      // down to the grass and back to her paws
+      ballAt(it, top);
+      A.aLx = A.aRx = -1.1 + Math.abs(Math.cos(ph * PI)) * 0.25; A.aLs = A.aRs = -0.2;
+      A.y = 0.01 + Math.abs(Math.sin(ph * PI)) * 0.03;
+      if (ph > 0.47 && ph < 0.53) emit('puff', top.clone().setY(0.02), { n: 1, spread: 0.05, v: [0, 0.1, 0], life: 0.5, size: 0.07 });
+    });
+    // and one last big bounce away
+    const [fx, fz] = forward(A.h), from = handBall();
+    yield* blend({ aLx: -2.2, aRx: -2.2 }, 0.2);
+    yield* bounceAlong(it, from, rollTo(from, fx, fz, 1.1), 1.6, 0.6, 4);
+    limbsRest();
+    yield* wait(0.6, (k, t) => { A.y = 0.01 + Math.abs(Math.sin(t * 8)) * 0.06; });
+    walker.refresh();
+  }
+  function* ballKick(it) {
+    clearMap(it);
+    const b = ballPos(it);
+    yield* faceTo(b.x, b.z);
+    const [fx, fz] = forward(A.h), d = Math.hypot(b.x - A.x, b.z - A.z);
+    if (d > 0.36) yield* walk(b.x - fx * 0.3, b.z - fz * 0.3);
+    yield* blend({ legR: 0.7, aLx: -0.5, aRx: 0.4 }, 0.3);                  // wind up
+    yield* blend({ legR: -1.0, aLx: 0.5, aRx: -0.6 }, 0.12);                // and kick!
+    emit('spark', ballPos(it).setY(0.15), { n: 6, spread: 0.08, v: [0, 0.3, 0], vr: 0.2, life: 0.7, size: 0.06 });
+    const from = ballPos(it);
+    yield* bounceAlong(it, from, rollTo(from, fx, fz, 2.2), 2.0, 0.5, 4);
+    limbsRest();
+    yield* wait(0.8, (k, t) => { A.aLx = A.aRx = -2.4; A.y = 0.01 + Math.abs(Math.sin(t * 9)) * 0.08; });
+    limbsRest();
+    walker.refresh();
+  }
+  function* ballThrow(it) {
+    yield* pickUpBall(it);
+    const from = handBall();
+    yield* blend({ aLx: -2.8, aRx: -2.8, aLs: 0.1, aRs: 0.1, headX: -0.4 }, 0.3);
+    yield* wait(1.4, k => {                                             // up, up, and back down into her paws
+      const p = from.clone(); p.y = from.y + 4 * 1.5 * k * (1 - k); ballAt(it, p); spinBall(it, 0.01);
+      A.headX = -0.4 - Math.sin(k * PI) * 0.3;
+    });
+    emit('spark', handBall().setY(0.5), { n: 10, spread: 0.2, v: [0, 0.4, 0], vr: 0.25, life: 1, size: 0.07 });
+    yield* blend({ aLx: -1.1, aRx: -1.1, headX: 0 }, 0.2);
+    yield* wait(0.5, (k, t) => { A.y = 0.01 + Math.abs(Math.sin(t * 9)) * 0.06; ballAt(it, handBall().setY(0.31 + A.y)); });
+    const [fx, fz] = forward(A.h);
+    yield* bounceAlong(it, handBall(), rollTo(handBall(), fx, fz, 0.6), 1.0, 0.3, 3);
+    limbsRest();
+    walker.refresh();
+  }
+
   // ---------- the things in the room, and what each offers ----------
   // A spot is a box in plan metres, or one of the room's movable things.
   const box = (x0, x1, y0, y1, z0, z1) => new THREE.Box3(W(x0, y0, z0), W(x1, y1, z1));
@@ -572,6 +666,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
   for (const it of named('door')) spots.push({ it, acts: ['knock', 'peek'] });
   for (const name of ['cupcakes']) for (const it of named(name)) spots.push({ it, acts: ['cupcake'] });
   for (const it of named('pouf')) spots.push({ it, acts: ['poufSit'] });
+  for (const it of named('ball')) if (it.obj.getWorldPosition(new THREE.Vector3()).z < -room.plan.z) spots.push({ it, acts: ['ballBounce', 'ballKick', 'ballThrow'], reach: 0.5 });
   for (const it of named('backpack')) spots.push({ it, acts: ['bagLook', 'bagMarch'] });
 
   const wearSpots = new Map();

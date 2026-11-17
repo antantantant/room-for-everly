@@ -33,7 +33,7 @@ A squirrel in a pink dress, from Everly's front and back drawings, made in the s
   - big bed: sleep, sit on the edge, bounce, hug Melody · sofas: sit, nap, bounce, look out at the castle
   - kitchen: stir the saucepan, boil the kettle, wash hands or a plate, grab a snack or milk from the fridge, eat a cupcake
   - bathroom: brush teeth, wash face, floss, funny faces in the mirrors, use the toilet, wash hands at the little basin, take a shower
-  - backyard: swing (or swing really high), smell or water the flowers, shake or hug the apple tree, watch the clouds, cartwheels, roll in the grass, bunny hops
+  - backyard: swing (or swing really high), bounce, kick or throw the big ball (it bounces and stays where it lands), smell or water the flowers, shake or hug the apple tree, watch the clouds, cartwheels, roll in the grass, bunny hops
   - desks: type or watch a video on the laptop, draw, colour, doodle and show it off · wardrobes: try on clothes (a new dress for a while) or hide · lit-up clothes: R puts them on
   - rugs: dance, roll around, bunny hops · the TV, toys, chairs, pouf, plants, plushes, doors, the floor lamp, the backpack and the kids' window too
   - Any arrow key stops an activity early. Sitting down, she stays seated until an arrow key gets her up.
