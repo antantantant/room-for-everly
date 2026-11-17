@@ -1372,11 +1372,42 @@ export function buildScene(scene, renderer) {
   }
 
   // clothes on a hanger hanging from (x, y, z): thin across x, `depth` deep along z
-  const garmentColors = [0xf7b6c8, 0xffffff, 0xfbd3df, 0xd9c8f0, 0xfbe7a6, 0xf48fb1, 0xc6e2f5, 0xfde6ee];
+  const garmentColors = [0xe8384f, 0x4d9de0, 0xffd23f, 0x5cc777, 0x9b6ee0, 0xff8c3a, 0xffffff, 0x2ec4b6];   // clearly unlike her own pink dress, so a change shows
+  // Each cloth is a little copy of the dress the squirrel wears, so what she puts on looks
+  // like what hung there: a fitted bodice with the white ribbons crossed over it, a flared
+  // skirt scalloped at the hem, and the white frill peeping out beneath, on a gold hanger.
+  // One mesh per cloth (its colours are painted on the vertices).
+  const dressMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide });
+  const hangerGold = new THREE.Color(0xe2bd6b), ribbon = new THREE.Color(0xffffff);
+  const tint = (geo, color) => { const n = geo.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) color.toArray(a, i * 3); geo.setAttribute('color', new THREE.BufferAttribute(a, 3)); return geo; };
+  function dressGeo(c, len, depth) {
+    const col = new THREE.Color(c), parts = [], wd = Math.min(depth, len * 0.62), bodH = len * 0.36, top = -0.04, waist = top - bodH, hem = -0.035 - len;
+    parts.push(tint(new THREE.BoxGeometry(0.008, 0.008, wd * 0.95).translate(0, -0.03, 0), hangerGold));         // the hanger's bar
+    // bodice: rounded, a little narrower at the waist
+    const bod = new THREE.LatheGeometry([[0.001, 0], [wd * 0.27, 0.01], [wd * 0.31, bodH * 0.45], [wd * 0.36, bodH * 0.9], [wd * 0.2, bodH], [0.001, bodH]].map(([r, y]) => new THREE.Vector2(r, y)), 24);
+    parts.push(tint(bod.scale(0.04 / wd, 1, 1).translate(0, waist, 0), col));
+    // the crossed white ribbons, on both faces
+    for (const sx of [-1, 1]) for (const k of [-1, 1]) {
+      const r = new THREE.BoxGeometry(0.003, bodH * 1.05, 0.012).rotateX(k * 0.55).translate(sx * 0.0128, waist + bodH * 0.5, 0);
+      parts.push(tint(r, ribbon));
+    }
+    // skirt: flared, flat front to back, scalloped along the hem
+    const flare = (r0, r1, y0, y1, thick, color, amp) => {
+      const g = new THREE.LatheGeometry([[r1, 0], [r1 * 0.97, (y1 - y0) * 0.15], [(r0 + r1) / 2, (y1 - y0) * 0.6], [r0, y1 - y0]].map(([r, y]) => new THREE.Vector2(r, y)), 40, 0, Math.PI * 2);
+      g.scale(thick / r1, 1, 1);
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) if (p.getY(i) < 0.001) p.setY(i, amp * Math.abs(Math.sin(p.getZ(i) / r1 * Math.PI * 3.5)));
+      g.computeVertexNormals();
+      return tint(g.translate(0, y0, 0), color);
+    };
+    parts.push(flare(wd * 0.3, wd * 0.5, hem + 0.025, waist + 0.004, 0.02, col, 0.02));
+    parts.push(flare(wd * 0.47, wd * 0.52, hem, hem + 0.04, 0.023, ribbon, 0.012));                                  // the frill
+    return mergeGeometries(parts);
+  }
   function garment(c, len, depth, x, y, z, parent) {
     const g = pickable(group(x, y, z, 0, parent), 'clothes', { lay: [0, 0, Math.PI / 2], color: '#' + c.toString(16).padStart(6, '0') });
     add(new THREE.TorusGeometry(0.018, 0.003, 6, 16, Math.PI), gold, 0, 0, 0, g).rotation.y = Math.PI / 2;
-    soft(0.035, len, depth, 0.015, paint(c), 0, -0.035 - len / 2, 0, g);
+    add(dressGeo(c, len, depth), dressMat, 0, 0, 0, g);
     return g;
   }
   // a two-door wardrobe built facing +z: hollow, a rail of clothes inside, doors that open
