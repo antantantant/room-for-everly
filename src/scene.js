@@ -1765,7 +1765,7 @@ export function buildScene(scene, renderer) {
   door(doorLeaf(YARD_DOOR[1] - 0.02, 0.03, YARD_DOOR[1] - YARD_DOOR[0] - 0.02, 0), Math.PI, 1.5 * Math.PI - 0.12, false);
 
   // The back of the house, as it looks from the yard: clapboard with the back door in it,
-  // a step, a lamp by the door, window boxes, and a pink shingle roof with a chimney.
+  // a lamp by the door, window boxes, and a pink shingle roof with a chimney.
   // The outer walls are inward sheets that vanish from outside, so this skin faces out.
   // The roof would hide the rooms from the views above, so it shows only while the
   // camera is out in the yard (setOutdoors).
@@ -1780,10 +1780,9 @@ export function buildScene(scene, renderer) {
     const skin = add(skinGeo, yardMat(0xffffff, sidingTex), XE / 2, 0, -0.004);
     skin.rotation.y = Math.PI;
     skin.castShadow = false;
-    // corner boards and the step
+    // corner boards
     const trimW = yardMat(0xfdf8f2);
     for (const x of [0.06, XE - 0.06]) box(0.12, EH, 0.03, trimW, x, EH / 2, -0.02).castShadow = false;
-    box(d1 - d0 + 0.5, 0.12, 0.42, yardMat(0xe8e1d6), (d0 + d1) / 2, 0.06, -0.21);
     // a lantern by the door, glowing
     const lg = group(d0 - 0.3, 1.75, -0.04);
     box(0.1, 0.16, 0.06, gold, 0, 0, -0.03, lg);
