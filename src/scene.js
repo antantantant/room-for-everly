@@ -1728,6 +1728,27 @@ export function buildScene(scene, renderer) {
     scatter(new THREE.CylinderGeometry(0.005, 0.005, 1, 5), yardMat(0x6fae7c), stems, root);
     for (const c of colours) scatter(new THREE.SphereGeometry(0.035, 10, 8), yardMat(+c), heads[c], root);
     yard.bed = [bx0, bx1, bz0, bz1];
+    // along the front of the bed, bigger flowers she can pick (Space) and carry about
+    {
+      const petals = new THREE.Shape();
+      for (let i = 0; i <= 80; i++) {
+        const a = i / 80 * Math.PI * 2, r = 0.032 + 0.026 * Math.abs(Math.cos(a * 2.5));
+        i ? petals.lineTo(Math.cos(a) * r, Math.sin(a) * r) : petals.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      const petalGeo = new THREE.ExtrudeGeometry(petals, { depth: 0.006, bevelEnabled: false }), stemGeo = new THREE.CylinderGeometry(0.006, 0.007, 1, 6);
+      const leafGeo = new THREE.SphereGeometry(0.03, 8, 6).scale(1, 0.25, 0.5), middle = new THREE.SphereGeometry(0.018, 10, 8).scale(1, 1, 0.6);
+      const stemM = yardMat(0x6fae7c), centre = yardMat(0xffc94d);
+      const kinds = [0xf47aa0, 0xffffff, 0xffd34d, 0xc9a8f0, 0xf9a8c8, 0xff9e7a].map(c => yardMat(c));
+      let n = 0;
+      for (let x = bx0 + 0.2; x < bx1 - 0.1; x += 0.3, n++) {
+        const h = 0.36 + rand() * 0.12, fg = pickable(group(x + (rand() - 0.5) * 0.06, 0.12, bz1 - 0.08, (rand() - 0.5) * 0.6), 'flower', { lay: [0, 0, 0] });   // held up in front of her, not over her head
+        const stem = new THREE.Mesh(stemGeo, stemM); stem.scale.y = h; stem.position.y = h / 2; fg.add(stem);
+        const leaf = new THREE.Mesh(leafGeo, stemM); leaf.position.set(0.025, h * 0.4, 0); leaf.rotation.z = 0.5; fg.add(leaf);
+        const head = group(0, h, 0, 0, fg); head.rotation.x = -0.5;
+        head.add(new THREE.Mesh(petalGeo, kinds[n % kinds.length]));
+        const mid = new THREE.Mesh(middle, centre); mid.position.z = 0.008; head.add(mid);
+      }
+    }
 
     // a little apple tree in the corner
     const tg = group(4.75, 0, z0 + 0.95);
