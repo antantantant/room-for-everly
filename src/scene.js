@@ -1636,11 +1636,102 @@ export function buildScene(scene, renderer) {
       add(turn([[0, 0], [0.07, 0], [0.11, 0.012], [0.115, 0.016], [0.1, 0.014], [0, 0.006]]), porcelain, 0, 0, 0, pickable(group(px, ty + 0.004, pz), 'plate'));
       pickable(chair(cx + sx * 0.66, pz, sx < 0 ? Math.PI / 2 : -Math.PI / 2, color), 'chair');
     }
-    const v = pickable(group(cx, ty, cz), 'flowers');
+    const v = pickable(group(cx, ty, cz), 'roses');
     add(turn([[0, 0], [0.035, 0], [0.045, 0.05], [0.025, 0.11], [0.03, 0.13]]), mat(0xfbd3df, null, { roughness: 0.15 }), 0, 0, 0, v);
-    [[0.0, 0.32, 0xf47aa0], [0.05, 0.28, 0xffffff], [-0.045, 0.27, 0xf7a8bd]].forEach(([dx, h, c]) => {
-      cyl(0.004, 0.004, h - 0.1, leafGreen, dx / 2, 0.1 + (h - 0.1) / 2, 0, v).rotation.z = -dx * 2;
-      ball(1, paint(c), dx, h, 0, v, 0.022, 0.032, 0.022);
+    // Five red roses, built like real ones. Each petal is a curved surface: narrow at
+    // the base, widest near its rounded top, cupped across, its tip rolling back as the
+    // flower opens. They spiral round the head (137.5° apart), the inner ones wrapped
+    // tight round the bud, the outer ones opening out; deep red, darker in the heart and
+    // at the base, with a velvet sheen. Under each head, green sepals curl down; the stems
+    // carry thorns and leaves of three serrated, folded leaflets. Two meshes per rose.
+    const surf = (nu, nv, f, color) => {
+      const pos = [], col = [], idx = [];
+      for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+        const u = i / nu * 2 - 1, vv = j / nv, q = f(u, vv);
+        pos.push(q[0], q[1], q[2]);
+        if (color) { const c = color(u, vv); col.push(c.r, c.g, c.b); }
+      }
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const a = j * (nu + 1) + i, c = a + nu + 1; idx.push(a, c, a + 1, a + 1, c, c + 1); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      if (color) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      return g;
+    };
+    const smooth = (a, b, x) => { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+    // a petal (or sepal): grows up +y from its base, hollow side towards +z
+    const petal = ({ len, wid, cup, curl, wave = 0, ph = 0 }, color) => surf(10, 12, (u, v) => {
+      const vt = v * (1 - 0.13 * u * u);
+      const w = wid * (0.2 + 0.8 * Math.sin(Math.min(1, vt * 1.25) * Math.PI / 2)) * (1 - 0.3 * smooth(0.82, 1, vt));
+      let y = 0, z = 0, th = 0;
+      for (let k = 0, n = 12; k < n; k++) { const sv = (k + 0.5) / n * vt; th = curl * smooth(0.5, 1, sv) ** 1.5; y += Math.cos(th) * len * vt / n; z -= Math.sin(th) * len * vt / n; }
+      const off = cup * u * u * w * 0.5 + wave * wid * 0.06 * Math.sin(u * 7 + ph) * vt * vt;
+      return [u * w / 2, y + Math.sin(th) * off, z + Math.cos(th) * off];
+    }, color);
+    const noUV = g => { g.deleteAttribute('uv'); return g; };
+    function roseHead(base) {
+      const parts = [], N = 26;
+      for (let i = 0; i < N; i++) {
+        const t = i / (N - 1), phi = i * 2.39996, shade = 0.7 + 0.3 * t;
+        const g = petal({ len: 0.016 + 0.026 * t ** 0.8, wid: 0.017 + 0.036 * t ** 0.8, cup: 1.15 - 0.8 * t, curl: 1.6 * t * t, wave: t, ph: i }, (u, v) => {
+          const edge = Math.abs(u) > 0.8 && v > 0.75 ? 0.82 : 1;
+          return base.clone().multiplyScalar(shade * (0.55 + 0.45 * v ** 0.6) * edge);
+        });
+        g.rotateX(-(0.06 + 1.3 * t ** 1.5));
+        g.rotateY(Math.atan2(-Math.cos(phi), -Math.sin(phi)));
+        const r0 = 0.0012 + 0.007 * t;
+        g.translate(Math.cos(phi) * r0, 0.007 * (1 - t), Math.sin(phi) * r0);
+        parts.push(g);
+      }
+      return mergeGeometries(parts);
+    }
+    function roseGreen() {                                        // the sepals and the hip, under the head
+      const parts = [noUV(new THREE.SphereGeometry(0.006, 10, 8).scale(1, 1.2, 1).translate(0, -0.004, 0))];
+      for (let k = 0; k < 5; k++) {
+        const g = petal({ len: 0.02, wid: 0.007, cup: 0.5, curl: 0.9 });
+        g.rotateX(-1.75).rotateY(k * Math.PI * 2 / 5).translate(0, -0.002, 0);
+        parts.push(g);
+      }
+      return parts;
+    }
+    const leaflet = (L, W) => surf(6, 10, (u, v) => {
+      const hw = W * Math.sin(Math.PI * Math.min(v * 0.92 + 0.04, 1)) ** 0.75 * (1 + 0.1 * (Math.floor(v * 16) % 2));   // a serrated edge
+      return [u * hw, v * L, 0.4 * Math.abs(u) * hw - 0.003 * v * v];
+    });
+    function leaf() {                                            // three leaflets on a stalk
+      const parts = [noUV(new THREE.CylinderGeometry(0.0008, 0.001, 0.03, 4).translate(0, 0.015, 0))];
+      parts.push(leaflet(0.026, 0.009).translate(0, 0.028, 0));
+      for (const s of [-1, 1]) parts.push(leaflet(0.02, 0.0075).rotateZ(s * 1.0).translate(0, 0.014, 0));
+      return mergeGeometries(parts);
+    }
+    const petalMat = new THREE.MeshPhysicalMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.6, sheen: 1, sheenColor: new THREE.Color(0xff5068), sheenRoughness: 0.45, side: THREE.DoubleSide });
+    const greenMat = new THREE.MeshStandardMaterial({ color: 0x2f5c2c, roughness: 0.38, side: THREE.DoubleSide });
+    const up = new THREE.Vector3(0, 1, 0);
+    [[0, 0, 0.35], [0.052, 0.022, 0.31], [-0.05, 0.02, 0.3], [0.012, -0.052, 0.305], [-0.02, 0.058, 0.28]].forEach(([dx, dz, h], i) => {
+      const headAt = new THREE.Vector3(dx, h, dz), from = new THREE.Vector3(dx * 0.2, 0.1, dz * 0.2);
+      const dir = headAt.clone().sub(from).normalize(), L = headAt.distanceTo(from);
+      const turnTo = new THREE.Quaternion().setFromUnitVectors(up, dir);
+      const S = 0.62, M = new THREE.Matrix4().compose(headAt, turnTo.clone().multiply(new THREE.Quaternion().setFromAxisAngle(up, i * 1.7)), new THREE.Vector3(S, S, S));
+      const base = new THREE.Color(0xcc1530).multiplyScalar(0.9 + 0.2 * Math.sin(i * 3));
+      const head = new THREE.Mesh(roseHead(base).applyMatrix4(M), petalMat);
+      const green = roseGreen().map(g => g.applyMatrix4(M));
+      green.push(noUV(new THREE.CylinderGeometry(0.0026, 0.003, L, 6)).applyQuaternion(turnTo).translate(...from.clone().lerp(headAt, 0.5).toArray()));
+      const side = new THREE.Vector3(1, 0, 0).applyQuaternion(turnTo);
+      for (const [f, a] of [[0.3, 0], [0.5, 2.3], [0.72, 4.4], [0.85, 1.2]]) {               // thorns, hooked a little down
+        const out = side.clone().applyAxisAngle(dir, a + i), at = from.clone().lerp(headAt, f).addScaledVector(out, 0.0026);
+        const cone = noUV(new THREE.ConeGeometry(0.0018, 0.006, 5).translate(0, 0.003, 0));
+        cone.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, out.clone().addScaledVector(dir, -0.45).normalize())).translate(at.x, at.y, at.z);
+        green.push(cone);
+      }
+      for (const [f, a] of [[0.42, 0.5], [0.62, 3.6]]) {                                    // two leaves, reaching out and up
+        const out = side.clone().applyAxisAngle(dir, a + i * 0.7), at = from.clone().lerp(headAt, f);
+        const Y = out.clone().multiplyScalar(0.8).addScaledVector(dir, 0.6).normalize();
+        const Z = up.clone().addScaledVector(Y, -up.dot(Y)).normalize(), X = new THREE.Vector3().crossVectors(Y, Z);
+        green.push(leaf().applyMatrix4(new THREE.Matrix4().makeBasis(X, Y, Z).setPosition(at)));
+      }
+      const stems = new THREE.Mesh(mergeGeometries(green), greenMat);
+      for (const m of [head, stems]) { m.castShadow = m.receiveShadow = true; v.add(m); }
     });
   }
 
