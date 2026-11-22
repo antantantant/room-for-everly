@@ -35,7 +35,7 @@
 <script>
 // GitHub Pages lets browsers keep this page for ten minutes. If a newer version has
 // been published since, fetch it fresh (which also refreshes the browser's copy) and reload once.
-const BUILD = '21';
+const BUILD = '22';
 fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
   const live = (t.match(/const BUILD = '([^']+)'/) || [])[1];
   if (!live || live === BUILD) return;
@@ -55,7 +55,7 @@ fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
 <div id="label">
   <h1>Room for Everly</h1>
   <p>Arrow keys walk the squirrel · R plays with whatever has a P · Space picks up, puts down, opens and switches · L puts back what she moved · B puts on or takes off shoes · drag to rotate · scroll to zoom</p>
-  <button data-view="overview">Overview</button><button data-view="living">Living room</button><button data-view="bedroom">Bedroom</button><button data-view="bathroom">Bathroom</button><button data-view="kids">Kids' room</button><button data-view="yard">Backyard</button><button data-view="plan">Floor plan</button><button data-view="squirrel">Squirrel</button>
+  <button data-view="overview">Overview</button><button data-view="living">Living room</button><button data-view="bedroom">Bedroom</button><button data-view="bathroom">Bathroom</button><button data-view="kids">Kids' room</button><button data-view="yard">Backyard</button><button data-view="natalie">Natalie's room</button><button data-view="plan">Floor plan</button><button data-view="squirrel">Squirrel</button>
   <div id="feelings"><span>Feelings (1–5)</span><button data-feel="happy">😊 Happy</button><button data-feel="sad">😢 Sad</button><button data-feel="angry">😠 Angry</button><button data-feel="bored">😑 Bored</button><button data-feel="sleepy">😴 Sleepy</button><span id="energy">Energy <i><b id="energyFill"></b></i></span></div>
 </div>
 <div id="hint" hidden></div>
@@ -74,15 +74,15 @@ fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bump ?v= whenever src/ changes: it stops a browser pairing this page with an older cached module.
-import { createPipeline } from './src/pipeline.js?v=21';
-import { buildScene, views, SUNRISE } from './src/scene.js?v=21';
-import { createMusic } from './src/audio.js?v=21';
-import { createSquirrel } from './src/squirrel.js?v=21';
-import { createWalker } from './src/walk.js?v=21';
-import { createFeelings } from './src/feelings.js?v=21';
-import { createInteraction } from './src/interact.js?v=21';
-import { createShoes } from './src/shoes.js?v=21';
-import { createActivities } from './src/activities.js?v=21';
+import { createPipeline } from './src/pipeline.js?v=22';
+import { buildScene, views, SUNRISE } from './src/scene.js?v=22';
+import { createMusic } from './src/audio.js?v=22';
+import { createSquirrel } from './src/squirrel.js?v=22';
+import { createWalker } from './src/walk.js?v=22';
+import { createFeelings } from './src/feelings.js?v=22';
+import { createInteraction } from './src/interact.js?v=22';
+import { createShoes } from './src/shoes.js?v=22';
+import { createActivities } from './src/activities.js?v=22';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);
@@ -186,7 +186,7 @@ let minutes = SUNRISE.start, speed = 20, playing = false, breeze = 0, last = per
 
 // Out in the backyard, in full sun, the eye adjusts: the picture is darker there.
 let baseExposure = 1, outdoors = 0;
-const looksOutdoors = () => controls.target.z < -room.plan.z - 0.4 ? 1 : 0;   // the view is on the yard (plan z below 0)
+const looksOutdoors = () => controls.target.z < -room.plan.z - 0.4 && !room.inNatalie(controls.target) ? 1 : 0;   // the view is on the yard (plan z below 0)
 const setExposure = () => { pipeline.renderer.toneMappingExposure = baseExposure * (1 - 0.68 * outdoors * Math.min(1, room.sunPower / 6)); };
 function applySun() {
   const { exposure, progress } = room.setSun(minutes);

@@ -271,6 +271,9 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     // the main bed
     bedSleep: { title: 'Sleep in the big bed', cost: -1, mood: 'sleepy', *run() { yield* lie(wp(1.45, 0.62, 7.7, PI / 2)); yield* sleep(6); yield* getUp(); } },
     bedSit: { title: 'Sit on the edge of the bed', cost: 0.02, *run() { yield* sit(wp(1.3, 0.62, 8.42, 0)); yield* wait(4, swingLegs); yield* unsit(); } },
+    natSleep: { title: "Nap in Natalie's bed", cost: -1, mood: 'sleepy', *run() { yield* lie(wp(8.25, 0.52, -16.2, 0)); yield* sleep(6); yield* getUp(); } },
+    natBounce: { title: "Bounce on Natalie's bed!", cost: 0.16, mood: 'happy', *run() { yield* onTop(8.25, 0.52, -16.1); yield* bounce(4, 0.52); yield* offTop(); } },
+    natSit: { title: "Sit on Natalie's bed", cost: 0.01, *run() { yield* sit(wp(7.78, 0.52, -15.9, -PI / 2)); yield* wait(4, swingLegs); yield* unsit(); } },
     bedBounce: { title: 'Bounce on the bed!', cost: 0.16, mood: 'happy', *run() { yield* onTop(1.25, 0.62, 7.7); yield* bounce(4, 0.62); yield* offTop(); } },
     bedHug: { title: 'Hug Melody', cost: 0.02, mood: 'happy', ok: () => plushNear(W(0.75, 0.6, 7.7), 0.8), *run() { const p = plushNear(W(0.75, 0.6, 7.7), 0.8); yield* sit(wp(1.0, 0.62, 8.42, 0)); yield* hug(p, 3.5, true); yield* unsit(); } },
     // sofa and loveseat
@@ -650,6 +653,10 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       { box: box(room.yard.swing.x - 0.3, room.yard.swing.x + 0.3, 0, 0.6, room.yard.swing.z - 0.15, room.yard.swing.z + 0.15), acts: ['swing', 'swingHigh'] },
       { box: box(room.yard.bed[0], room.yard.bed[1], 0, 0.5, room.yard.bed[2], room.yard.bed[3]), acts: ['smellFlowers', 'waterFlowers'] },
       { box: box(room.yard.tree.x - 0.15, room.yard.tree.x + 0.15, 0, 1.4, room.yard.tree.z - 0.15, room.yard.tree.z + 0.15), acts: ['treeShake', 'treeHug'], reach: 0.45 },
+      ...(room.yard.natalie ? [
+        { box: box(7.72, 8.78, 0, 0.9, -17.12, -15.22), acts: ['natSleep', 'natBounce', 'natSit'] },
+        { box: box(5.65, 7.55, 0, 0.03, -16.0, -14.1), acts: ['rugDance', 'rugRoll', 'rugTummy'], rug: true },
+      ] : []),
       { box: box(room.yard.bounds.x0, room.yard.bounds.x1, 0, 0.03, room.yard.bounds.z0, room.yard.bounds.z1), acts: ['grassClouds', 'cartwheel', 'rugRoll', 'rugHop'], rug: true },
     ] : []),
   ];

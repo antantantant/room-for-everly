@@ -26,7 +26,9 @@ const HALL_DOOR = [3.95, 4.8], EN_SUITE = [6.7, 7.6], DOOR5 = [3.95, 4.8], KIDS_
 // the backyard, south of the kitchen (z below 0), and its door in the south wall beside the fridge
 export const YARD = { x0: 0, x1: 9.4, z0: -7.4, z1: 0 };   // the whole width of the house, 7.4 m deep
 export const MEADOW = { x0: 0, x1: 9.4, z0: -13.4, z1: -7.4 };   // through a gate in the yard's back fence
-const GATE = [1.45, 2.4];                  // the gate's opening in that fence, just east of the flower bed
+const GATE = [1.45, 2.4];
+export const NAT = { x0: 4.6, x1: 9.0, z0: -17.2, z1: -13.4 };   // Natalie's room: a little cottage past the meadow
+const NAT_DOOR = [6.2, 7.05];              // its door, in the meadow's far fence, just south of the pond                  // the gate's opening in that fence, just east of the flower bed
 const YARD_DOOR = [8.25, 9.1];
 
 // The sun moves: buildScene().setSun(minutes) places it. Sunrise is minute 0.
@@ -44,6 +46,7 @@ export const views = {
   bathroom: [w(5.3, 1.75, 8.15), w(7.4, 0.95, 6.25)],
   kids:     [w(5.5, 1.6, 13.2), w(8.6, 0.9, 10.9)],
   yard:     [w(0.7, 2.7, -0.5), w(5.0, 0.2, -5.4)],
+  natalie:  [w(5.0, 1.75, -13.75), w(7.9, 0.6, -16.3)],
   plan:     [[0, 22, -1.899], [0, 0, -1.9]],
 };
 
@@ -681,7 +684,7 @@ export function buildScene(scene, renderer) {
   sun.shadow.normalBias = 0.015;
   sun.shadow.radius = 2;
   // The sun comes from the east (-x), so its shadow camera spans the home's whole north-south length.
-  const sunBox = { left: -21, right: 21, top: 2.8, bottom: -2.8, near: 0.5, far: 30 };
+  const sunBox = { left: -25, right: 25, top: 2.8, bottom: -2.8, near: 0.5, far: 30 };
   Object.assign(sun.shadow.camera, sunBox);
   scene.add(sun, sun.target);
 
@@ -733,7 +736,7 @@ export function buildScene(scene, renderer) {
   // behind, yet still block the sun, so light only enters through the windows.
   // openings: [left, right, bottom, top] in the wall's own x; a bottom of 0 is a doorway.
   const wallMat = mat(0xffffff, plasterTex, { roughness: 1, shadowSide: THREE.DoubleSide, bumpMap: plasterTex, bumpScale: 0.5 });
-  function wall(width, openings, x, z, rotY) {
+  function wall(width, openings, x, z, rotY, material = wallMat) {
     const s = new THREE.Shape(), doors = openings.filter(o => o[2] === 0).sort((a, b) => a[0] - b[0]);
     s.moveTo(-width / 2, 0);
     for (const [a, b, , top] of doors) { s.lineTo(a, 0); s.lineTo(a, top); s.lineTo(b, top); s.lineTo(b, 0); }
@@ -743,17 +746,17 @@ export function buildScene(scene, renderer) {
       hole.moveTo(a, y0); hole.lineTo(a, y1); hole.lineTo(b, y1); hole.lineTo(b, y0); hole.closePath();
       s.holes.push(hole);
     }
-    const m = add(new THREE.ShapeGeometry(s), wallMat, x, 0, z);
+    const m = add(new THREE.ShapeGeometry(s), material, x, 0, z);
     m.rotation.y = rotY;
   }
   // An outer wall from a to b along x (at z = at) or along z (at x = at); `inward` is the
   // side the room is on (+1 or -1). Openings are given in plan coordinates along the wall.
-  function outer(axis, at, a, b, inward, openings = []) {
+  function outer(axis, at, a, b, inward, openings = [], material) {
     const mid = (a + b) / 2;
     const rotY = axis === 'x' ? (inward > 0 ? 0 : Math.PI) : (inward > 0 ? Math.PI / 2 : -Math.PI / 2);
     const local = v => axis === 'x' ? (inward > 0 ? v - mid : mid - v) : (inward > 0 ? mid - v : v - mid);
     const ops = openings.map(([p, q, y0, y1]) => [Math.min(local(p), local(q)), Math.max(local(p), local(q)), y0, y1]);
-    wall(Math.abs(b - a), ops, axis === 'x' ? mid : at, axis === 'x' ? at : mid, rotY);
+    wall(Math.abs(b - a), ops, axis === 'x' ? mid : at, axis === 'x' ? at : mid, rotY, material);
   }
   outer('x', 0, 0, XE, 1, [[YARD_DOOR[0], YARD_DOOR[1], 0, DOOR_H]]);   // south: the kitchen and the sofa; the back door
   outer('z', XE, 0, ZK, -1);                                       // west
@@ -1821,7 +1824,8 @@ export function buildScene(scene, renderer) {
     run(GATE[1] + 0.05, z0 + 0.04, x1 - 0.04, z0 + 0.04);
     run(x0 + 0.04, m0 + 0.04, x0 + 0.04, z1 - 0.02);                     // the sides, past the yard and the meadow
     run(x1 - 0.04, m0 + 0.04, x1 - 0.04, z1 - 0.02);
-    run(x0 + 0.04, m0 + 0.04, x1 - 0.04, m0 + 0.04);                     // the meadow's far fence
+    run(x0 + 0.04, m0 + 0.04, NAT.x0 - 0.05, m0 + 0.04);                 // the meadow's far fence, either side of Natalie's cottage
+    run(NAT.x1 + 0.05, m0 + 0.04, x1 - 0.04, m0 + 0.04);
     scatter(picket, white, pickets, root);
     scatter(tip, white, tips, root);
 
@@ -1985,6 +1989,166 @@ export function buildScene(scene, renderer) {
   doorTrim('x', 0, YARD_DOOR);
   door(doorLeaf(YARD_DOOR[1] - 0.02, 0.03, YARD_DOOR[1] - YARD_DOOR[0] - 0.02, 0), Math.PI, 1.5 * Math.PI - 0.12, false);
 
+  // ---------- Natalie's room: a little lavender cottage past the meadow ----------
+  // Its door is in the meadow's far fence beside the pond. Inside, walls painted lavender
+  // under a night-sky theme of moons and stars: a bed with a starry duvet and a teddy bear,
+  // a bedside table and lamp, a desk under the east window (the morning sun comes in), a
+  // wardrobe of clothes she can try on, a toy chest, a round rug and a paper-star lantern.
+  // Outside it has its own clapboard skin, a name plaque over the door and a lilac roof
+  // (shown only while the camera is outdoors, like the house's).
+  const natRoof = group(0, 0, 0);
+  {
+    const { x0, x1, z0, z1 } = NAT, [d0, d1] = NAT_DOOR, cxn = (x0 + x1) / 2, czn = (z0 + z1) / 2, wz = [czn - 0.55, czn + 0.55];
+    const lav = mat(0xe8defc, plasterTex, { roughness: 1, shadowSide: THREE.DoubleSide, bumpMap: plasterTex, bumpScale: 0.5 });
+    outer('x', z1, x0, x1, -1, [[d0, d1, 0, DOOR_H]], lav);              // north, with the door
+    outer('z', x0, z0, z1, 1, [[wz[0], wz[1], 0.85, 2.0]], lav);          // east, with the window
+    outer('z', x1, z0, z1, -1, [], lav);                                 // west
+    outer('x', z0, x0, x1, 1, [], lav);                                  // south
+    const rect = (flip) => new THREE.Shape([[x0, z0], [x1, z0], [x1, z1], [x0, z1]].map(([x, z]) => new THREE.Vector2(x, flip ? -z : z)));
+    const nf = add(new THREE.ShapeGeometry(rect(true)), mat(0xffffff, plankTex, { roughness: 0.55, bumpMap: plankTex, bumpScale: 0.4 }), 0, 0, 0);
+    nf.rotation.x = -Math.PI / 2; nf.castShadow = false;
+    const nb = add(new THREE.BoxGeometry(x1 - x0, 0.3, z1 - z0), mat(0x2a2326), cxn, -0.152, czn); nb.castShadow = false;
+    const nc = add(new THREE.ShapeGeometry(rect(false)), mat(0xfbf7ff, null, { roughness: 1, shadowSide: THREE.DoubleSide }), 0, H, 0);
+    nc.rotation.x = Math.PI / 2;
+    // the door, hung on its west side, swinging in; it starts shut
+    doorTrim('x', z1, NAT_DOOR);
+    door(doorLeaf(d1 - 0.02, z1 - 0.03, d1 - d0 - 0.02, Math.PI), Math.PI, Math.PI / 2 + 0.12, false);
+    // the east window: the view outside through it, a white frame and a sill
+    const wp0 = new THREE.Mesh(new THREE.PlaneGeometry(wz[1] - wz[0], 1.15), portalMat);
+    wp0.position.set(x0 - 0.02, 0.85 + 0.575, czn); wp0.rotation.y = Math.PI / 2; wp0.renderOrder = -2;
+    root.add(wp0); hideFromAO.push(wp0);
+    const wf = paint(P.white);
+    for (const z of wz) box(0.08, 1.21, 0.06, wf, x0 + 0.02, 0.85 + 0.575, z);
+    for (const y of [0.85, 2.0]) box(0.08, 0.06, wz[1] - wz[0] + 0.06, wf, x0 + 0.02, y, czn);
+    box(0.05, 1.15, 0.035, wf, x0 + 0.02, 1.425, czn); box(0.05, 0.035, wz[1] - wz[0], wf, x0 + 0.02, 1.5, czn);
+    box(0.2, 0.04, wz[1] - wz[0] + 0.2, wf, x0 + 0.1, 0.83, czn);
+    // a starry night-sky print, for the duvet, the rug and the pictures
+    const starTex = (bg, star, n, rep = 1) => tex(256, 256, (g, s) => {
+      g.fillStyle = bg; g.fillRect(0, 0, s, s);
+      for (let i = 0; i < n; i++) {
+        const x = rand() * s, y = rand() * s, r = 5 + rand() * 7;
+        g.fillStyle = i % 5 ? star : '#fff6c8';
+        g.beginPath();
+        for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 - Math.PI / 2, rr = k % 2 ? r * 0.45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+        g.fill();
+      }
+      g.fillStyle = '#fff6c8'; g.beginPath(); g.arc(s * 0.7, s * 0.3, 22, 0, Math.PI * 2); g.fill();     // a moon
+      g.fillStyle = bg; g.beginPath(); g.arc(s * 0.7 + 10, s * 0.3 - 6, 19, 0, Math.PI * 2); g.fill();
+    }, rep, rep);
+    // the bed, its head against the south wall in the west corner
+    {
+      const bx = 8.25, L = 1.9, Wd = 1.0, g = group(bx, 0, z0 + 0.03, 0), mt = 0.5;
+      const hb = new THREE.Shape(); hb.moveTo(-0.55, 0); hb.lineTo(0.55, 0); hb.lineTo(0.55, 0.75); hb.bezierCurveTo(0.55, 1.1, -0.55, 1.1, -0.55, 0.75); hb.closePath();
+      add(new THREE.ExtrudeGeometry(hb, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 3, curveSegments: 20 }), velvet(0xc9b2f0), 0, 0.03, 0, g);
+      soft(Wd + 0.06, 0.24, L, 0.04, paint(P.white), 0, 0.2, L / 2 + 0.05, g);
+      slab(Wd, 0.18, L - 0.04, 0.05, [cream, cream], 0, 0.32, L / 2 + 0.05, g);
+      add(pillowGeo(Wd + 0.06, L * 0.66, 0.11), mat(0xffffff, starTex('#b9a3ec', '#ffffff', 30, 2)), 0, mt + 0.04, L - L * 0.33, g);
+      const pg = pickable(group(0, mt + 0.07, 0.3, 0, g), 'pillow');
+      add(pillowGeo(0.62, 0.38, 0.15), mat(0xffffff, dotsTex('#ffffff', '#cdb8f4', 2)), 0, 0, 0, pg).rotation.x = 0.12;
+      // a teddy bear sitting on the pillow end
+      const ted = pickable(group(0.28, mt + 0.05, 0.62, Math.PI, g), 'teddy bear'), fur = mat(0xc9925e, null, { roughness: 0.9 }), muzzle = mat(0xf3dcc0);
+      ball(0.075, fur, 0, 0.08, 0, ted, 1, 1.1, 0.9);
+      ball(0.06, fur, 0, 0.2, 0, ted);
+      for (const s of [-1, 1]) { ball(0.022, fur, s * 0.045, 0.255, 0, ted); ball(0.028, fur, s * 0.07, 0.04, 0.04, ted); ball(0.025, fur, s * 0.075, 0.12, 0.02, ted); ball(0.007, mat(0x2a1c1a), s * 0.02, 0.215, 0.052, ted); }
+      ball(0.025, muzzle, 0, 0.19, 0.05, ted, 1, 0.8, 0.8); ball(0.008, mat(0x2a1c1a), 0, 0.2, 0.07, ted);
+      add(new THREE.TorusGeometry(0.035, 0.008, 6, 16), mat(0xb48cf0), 0, 0.15, 0.03, ted).rotation.x = Math.PI / 2.4;   // a ribbon
+    }
+    // the bedside table and its lamp, a desk and chair under the window, the wardrobe
+    drawers(0.42, 0.5, 0.38, 2, 1, 7.4, z0 + 0.22, 0, paint(P.white), paint(0xcdb8f4));
+    tableLamp(7.4, 0.5, z0 + 0.22, 1.0, 'lamp');
+    {
+      const dk = group(x0 + 0.33, 0, czn, Math.PI / 2);
+      soft(1.0, 0.035, 0.55, 0.012, paint(P.white), 0, 0.72, 0, dk);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(0.022, 0.016, 0.7, paint(P.white), sx * 0.44, 0.35, sz * 0.22, dk);
+      // crayons in a cup, a sketchbook and a little globe
+      cyl(0.035, 0.03, 0.09, paint(0xcdb8f4), 0.32, 0.785, -0.05, dk);
+      [0xff6b8a, 0x6bb8ff, 0xffd84d, 0x7ad37a, 0xb48cf0].forEach((c, i) => { const cr = cyl(0.006, 0.006, 0.11, paint(c), 0.32 + Math.cos(i * 1.3) * 0.015, 0.83, -0.05 + Math.sin(i * 1.3) * 0.015, dk); cr.rotation.z = 0.15 * Math.cos(i); });
+      soft(0.3, 0.012, 0.22, 0.004, paint(0xfff1c8), -0.1, 0.745, 0.02, dk);
+      cyl(0.01, 0.04, 0.03, gold, -0.35, 0.755, -0.12, dk); ball(0.075, mat(0x7cc4e8), -0.35, 0.86, -0.12, dk);
+      pickable(chair(x0 + 0.75, czn, -Math.PI / 2, 0xcdb8f4, 0.85), 'chair');
+    }
+    wardrobe(1.0, 1.9, 0.55, 5.35, z0 + 0.3, 0, paint(P.white), paint(0xcdb8f4));
+    // the toy chest by the door, with toys on and around it
+    {
+      const tc = group(x1 - 0.3, 0, z1 - 0.75, -Math.PI / 2);
+      soft(0.7, 0.4, 0.42, 0.03, paint(0xcdb8f4), 0, 0.2, 0, tc);
+      soft(0.74, 0.06, 0.46, 0.025, paint(P.white), 0, 0.42, 0, tc);
+      add(new THREE.ShapeGeometry(heartShape(0.12), 20), paint(0xffffff), 0, 0.22, 0.212, tc);
+      [[0xff9eb5, -0.15], [0x9ed8ff, 0.05], [0xfff0a0, 0.22]].forEach(([c, dx], i) => pickable(group(dx, 0.45 + i * 0.0, 0, 0, tc), 'block') && box(0.08, 0.08, 0.08, paint(c), 0, 0.04, 0, tc.children[tc.children.length - 1]));
+    }
+    // the round rug in the middle
+    {
+      const rug = add(new THREE.CircleGeometry(0.95, 48), mat(0xffffff, starTex('#d9c8f6', '#ffffff', 24, 1.5), { roughness: 1 }), 6.6, 0.008, czn + 0.25);
+      rug.rotation.x = -Math.PI / 2; rug.castShadow = false;
+      const rim = add(new THREE.RingGeometry(0.95, 1.02, 48), paint(0xb9a3ec), 6.6, 0.009, czn + 0.25); rim.rotation.x = -Math.PI / 2; rim.castShadow = false;
+    }
+    // a name banner over the bed, and star pictures
+    const nameTex = (bg, fg) => tex(512, 128, (g, w, h) => {
+      g.fillStyle = bg; g.fillRect(0, 0, w, h);
+      g.fillStyle = fg; g.font = 'bold 76px "Comic Sans MS", "Chalkboard SE", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('Natalie', w / 2, h / 2 + 4);
+      g.fillStyle = '#fff6c8';
+      for (const [x, y] of [[40, 40], [470, 90], [60, 100], [455, 30]]) { g.beginPath(); for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 - Math.PI / 2, r = k % 2 ? 6 : 14; g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } g.fill(); }
+    });
+    flat(1.0, 0.25, mat(0xffffff, nameTex('#b9a3ec', '#ffffff')), 8.25, 1.55, z0 + 0.006, root);
+    picture(starTex('#2c2a5a', '#fff6c8', 16), 0.4, 0.5, 0.03, paint(P.white), group(5.6, 1.5, z1 - 0.006, Math.PI));
+    picture(starTex('#c9e6ff', '#ffffff', 14), 0.36, 0.36, 0.03, paint(P.white), group(x1 - 0.006, 1.5, czn - 0.6, -Math.PI / 2));
+    // the paper-star lantern, lit, hanging from the middle of the ceiling
+    {
+      const lx = 6.6, lz = czn, shade = shadeMat(0xfff4d8), bulb = bulbMat(), lg = group(lx, H - 0.45, lz);
+      cyl(0.003, 0.003, 0.3, paint(P.white), 0, 0.3, 0, lg);
+      const st = new THREE.Shape(); for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 + Math.PI / 2, r = k % 2 ? 0.07 : 0.16; k ? st.lineTo(Math.cos(a) * r, Math.sin(a) * r) : st.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+      add(new THREE.ExtrudeGeometry(st, { depth: 0.1, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.03, bevelSegments: 2 }).translate(0, 0, -0.05), shade, 0, 0, 0, lg);
+      ball(0.03, bulb, 0, 0, 0, lg);
+      const l = lamp(lx, H - 0.5, lz, { hit: [0.25, 0.3], shades: [shade], bulb, power: 2.2, distance: 6 });
+      l.proxy.position.y = H - 0.45; l.proxy.scale.set(1, 1, 1);
+      l.switch = switchable(lg, 'star lantern', k => setLamp(l, k > 0.5), LIGHT);
+      setLamp(l, true);
+    }
+    // ---- the outside of the cottage ----
+    const EH = H + 0.15, lavSide = yardMat(0xe9ddff, sidingTex);
+    const skin = (w, holes, x, z, rotY, local) => {
+      const sh = new THREE.Shape(), door = holes.find(h => h[2] === 0);
+      sh.moveTo(-w / 2, 0);
+      if (door) { const [a, b] = [local(door[0]), local(door[1])].sort((p, q) => p - q); sh.lineTo(a, 0); sh.lineTo(a, door[3]); sh.lineTo(b, door[3]); sh.lineTo(b, 0); }
+      sh.lineTo(w / 2, 0); sh.lineTo(w / 2, EH); sh.lineTo(-w / 2, EH); sh.closePath();
+      for (const h of holes.filter(h => h[2] > 0)) { const [a, b] = [local(h[0]), local(h[1])].sort((p, q) => p - q), p = new THREE.Path(); p.moveTo(a, h[2]); p.lineTo(a, h[3]); p.lineTo(b, h[3]); p.lineTo(b, h[2]); p.closePath(); sh.holes.push(p); }
+      const geo = new THREE.ShapeGeometry(sh), uv = geo.attributes.uv, ps = geo.attributes.position;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, ps.getX(i), ps.getY(i));
+      const m = add(geo, lavSide, x, 0, z); m.rotation.y = rotY; m.castShadow = false;
+    };
+    skin(x1 - x0, [[d0, d1, 0, DOOR_H]], cxn, z1 + 0.004, 0, v => v - cxn);                         // north, facing the meadow
+    skin(z1 - z0, [[wz[0], wz[1], 0.85, 2.0]], x0 - 0.004, czn, -Math.PI / 2, v => v - czn);        // east
+    skin(z1 - z0, [], x1 + 0.004, czn, Math.PI / 2, v => czn - v);                                   // west
+    const trimW = yardMat(0xfdf8f2);
+    for (const x of [x0 + 0.06, x1 - 0.06]) box(0.12, EH, 0.03, trimW, x, EH / 2, z1 + 0.02).castShadow = false;
+    // the name plaque over the door, and a lantern beside it
+    const plaque = add(new THREE.PlaneGeometry(0.8, 0.2), yardMat(0xffffff, nameTex('#fdf8f2', '#9b7bd8')), (d0 + d1) / 2, DOOR_H + 0.22, z1 + 0.012);
+    plaque.castShadow = false;
+    const lgo = group(d0 - 0.28, 1.75, z1 + 0.04);
+    box(0.1, 0.16, 0.06, gold, 0, 0, 0.03, lgo);
+    add(new THREE.BoxGeometry(0.11, 0.16, 0.11), new THREE.MeshBasicMaterial({ color: 0xffd9a0 }), 0, -0.02, 0.1, lgo);
+    // the lilac roof, ridge east to west, with a little round window in each gable
+    const ov = 0.3, rz0 = z0 - ov, rz1 = z1 + ov, rzm = czn, top = EH + 1.2, W2 = x1 - x0 + 2 * ov;
+    const slope = (za, ya, zb, yb) => {
+      const L = Math.hypot(zb - za, yb - ya), t = shingleTex.clone(); t.needsUpdate = true; t.repeat.set(W2 / 0.5, L / 0.5);
+      const m = yardMat(0xd4c2ff, t); m.side = THREE.DoubleSide;
+      const o = add(new THREE.PlaneGeometry(W2, L), m, cxn, (ya + yb) / 2, (za + zb) / 2, natRoof);
+      o.rotation.x = Math.atan2(zb - za, yb - ya);
+    };
+    slope(rz1, EH - 0.1, rzm, top);
+    slope(rz0, EH - 0.1, rzm, top);
+    const gm = yardMat(0xf1eaff); gm.side = THREE.DoubleSide;
+    const gableGeo = new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(-rz0, EH), new THREE.Vector2(-rz1, EH), new THREE.Vector2(-rzm, top - 0.05)]));
+    for (const x of [x0, x1]) add(gableGeo, gm, x, 0, 0, natRoof).rotation.y = Math.PI / 2;
+    box(W2, 0.12, 0.05, yardMat(0xfdf8f2), cxn, EH - 0.12, rz1 + 0.02, natRoof);
+    const star = new THREE.Shape(); for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 + Math.PI / 2, r = k % 2 ? 0.07 : 0.17; k ? star.lineTo(Math.cos(a) * r, Math.sin(a) * r) : star.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+    const vane = add(new THREE.ShapeGeometry(star), yardMat(0xffd84d), cxn, top + 0.35, rzm, natRoof); vane.material.side = THREE.DoubleSide;
+    cyl(0.012, 0.012, 0.35, gold, cxn, top + 0.15, rzm, natRoof);
+    natRoof.traverse(o => { o.castShadow = false; });
+    live.add(natRoof);
+    yard.natalie = NAT;
+  }
   // The back of the house, as it looks from the yard: clapboard with the back door in it,
   // a lamp by the door, window boxes, and a pink shingle roof with a chimney.
   // The outer walls are inward sheets that vanish from outside, so this skin faces out.
@@ -2045,7 +2209,7 @@ export function buildScene(scene, renderer) {
     const behind = new THREE.Mesh(new THREE.PlaneGeometry(40, 22), portalMat);
     behind.position.set(XE / 2, 10.5, -0.03); behind.rotation.y = Math.PI; behind.renderOrder = -2;
     root.add(behind); hideFromAO.push(behind);
-    outdoorOnly.push(behind, houseRoof);
+    outdoorOnly.push(behind, houseRoof, natRoof);
   }
 
   // ---------- the hallway from the living room to the main bedroom ----------
@@ -2568,5 +2732,5 @@ export function buildScene(scene, renderer) {
   renderSunDepth();
   for (const o of outdoorOnly) o.visible = false;
 
-  return { get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); for (const o of outdoorOnly) o.visible = k > 0.5; }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard };
+  return { get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); for (const o of outdoorOnly) o.visible = k > 0.5; }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard, inNatalie: v => v.x + CX > NAT.x0 && v.x + CX < NAT.x1 && v.z + CZ > NAT.z0 && v.z + CZ < NAT.z1 };
 }
