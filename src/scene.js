@@ -25,6 +25,8 @@ const LIVING_WIN = [1.3, 2.7, 0.9, 2.25], BED_WIN = [7.15, 8.25, 1.2, 2.3], KIDS
 const HALL_DOOR = [3.95, 4.8], EN_SUITE = [6.7, 7.6], DOOR5 = [3.95, 4.8], KIDS_DOOR = [10.25, 11.15];
 // the backyard, south of the kitchen (z below 0), and its door in the south wall beside the fridge
 export const YARD = { x0: 0, x1: 9.4, z0: -7.4, z1: 0 };   // the whole width of the house, 7.4 m deep
+export const MEADOW = { x0: 0, x1: 9.4, z0: -13.4, z1: -7.4 };   // through a gate in the yard's back fence
+const GATE = [1.45, 2.4];                  // the gate's opening in that fence, just east of the flower bed
 const YARD_DOOR = [8.25, 9.1];
 
 // The sun moves: buildScene().setSun(minutes) places it. Sunrise is minute 0.
@@ -679,7 +681,7 @@ export function buildScene(scene, renderer) {
   sun.shadow.normalBias = 0.015;
   sun.shadow.radius = 2;
   // The sun comes from the east (-x), so its shadow camera spans the home's whole north-south length.
-  const sunBox = { left: -15, right: 15, top: 2.8, bottom: -2.8, near: 0.5, far: 30 };
+  const sunBox = { left: -21, right: 21, top: 2.8, bottom: -2.8, near: 0.5, far: 30 };
   Object.assign(sun.shadow.camera, sunBox);
   scene.add(sun, sun.target);
 
@@ -940,25 +942,25 @@ export function buildScene(scene, renderer) {
         for (let i = 0; i < 3000; i++) { g.fillStyle = rand() < 0.5 ? 'rgba(60,120,60,0.25)' : 'rgba(210,245,170,0.25)'; g.fillRect(rand() * s, rand() * s, 1.5, 4); }
         for (let i = 0; i < 6; i++) { g.fillStyle = '#ffffff'; g.beginPath(); g.arc(rand() * s, rand() * s, 2, 0, Math.PI * 2); g.fill(); }
       }, 24, 24);
-      const lawn = new THREE.Mesh(new THREE.CircleGeometry(17, 64), openAir(lawnTex, 0xffffff));
+      const lawn = new THREE.Mesh(new THREE.CircleGeometry(26, 72), openAir(lawnTex, 0xffffff));
       lawn.rotation.x = -Math.PI / 2;
       lawn.position.y = -0.02;
       lawn.renderOrder = -1;
       outside.add(lawn);
       const hedgeMat = openAir(null, 0x4f8a4e), leafMat = openAir(null, 0x6aa95c), trunkMat = openAir(null, 0x8a6a50);
-      const hedge = new THREE.Mesh(new THREE.CylinderGeometry(16.6, 16.6, 1.1, 96, 1, true), hedgeMat);
+      const hedge = new THREE.Mesh(new THREE.CylinderGeometry(25.5, 25.5, 1.1, 128, 1, true), hedgeMat);
       hedge.position.y = 0.53;
       hedge.material.side = THREE.DoubleSide;
       outside.add(hedge);
       const at = (o, a, r, y = 0) => { o.position.set(Math.cos(a) * r, y, Math.sin(a) * r); outside.add(o); return o; };
       // round trees, kept off the line to the sunrise (due east is -x: angle PI)
-      for (const [a, r, s] of [[1.9, 13, 1.2], [2.5, 15, 1.4], [3.95, 14, 1.3], [3.6, 12.5, 1.0], [1.3, 14, 1.4], [0.6, 13.5, 1.2], [5.2, 14.5, 1.5], [5.9, 13, 1.1]]) {
+      for (const [a, r, s] of [[1.9, 20, 1.4], [2.5, 22, 1.6], [3.95, 21, 1.5], [3.55, 19, 1.2], [1.3, 21, 1.6], [0.6, 20, 1.4], [5.3, 22, 1.7], [5.9, 19.5, 1.3]]) {
         at(new THREE.Mesh(new THREE.CylinderGeometry(0.12 * s, 0.16 * s, 1.6 * s, 8), trunkMat), a, r, 0.8 * s);
         at(new THREE.Mesh(new THREE.SphereGeometry(1.1 * s, 16, 12), leafMat), a, r, 2.1 * s);
       }
       // two cottages along the hilltop, north-east and south-east
       const wallM = openAir(sidingTex, 0xfff4e8), roofM = openAir(shingleTex, 0xc8d8f0);
-      for (const [a, r, rot] of [[2.15, 14.2, 0.5], [3.9, 14.6, -0.6]]) {
+      for (const [a, r, rot] of [[2.15, 22, 0.5], [3.9, 23, -0.6]]) {
         const c = at(new THREE.Group(), a, r);
         c.rotation.y = rot;
         const body = new THREE.Mesh(new THREE.BoxGeometry(4, 2.6, 3), wallM);
@@ -1814,9 +1816,12 @@ export function buildScene(scene, renderer) {
       }
       for (const y of [0.2, 0.55]) { const r = box(L, 0.05, 0.025, white, (ax + bx) / 2, y, (az + bz) / 2); r.rotation.y = rotY; r.translateZ(0.025); }
     };
-    run(x0 + 0.04, z0 + 0.04, x1 - 0.04, z0 + 0.04);
-    run(x0 + 0.04, z0 + 0.04, x0 + 0.04, z1 - 0.02);
-    run(x1 - 0.04, z0 + 0.04, x1 - 0.04, z1 - 0.02);
+    const m0 = MEADOW.z0, md = z0 - m0, mcz = (z0 + m0) / 2;
+    run(x0 + 0.04, z0 + 0.04, GATE[0] - 0.05, z0 + 0.04);                // the back fence, with the gate's gap
+    run(GATE[1] + 0.05, z0 + 0.04, x1 - 0.04, z0 + 0.04);
+    run(x0 + 0.04, m0 + 0.04, x0 + 0.04, z1 - 0.02);                     // the sides, past the yard and the meadow
+    run(x1 - 0.04, m0 + 0.04, x1 - 0.04, z1 - 0.02);
+    run(x0 + 0.04, m0 + 0.04, x1 - 0.04, m0 + 0.04);                     // the meadow's far fence
     scatter(picket, white, pickets, root);
     scatter(tip, white, tips, root);
 
@@ -1831,9 +1836,9 @@ export function buildScene(scene, renderer) {
         if (y0) outdoorOnly.push(p);
       }
     };
-    sky(w, cx, z0 - 0.02, 0);
-    sky(d, x0 - 0.02, cz, Math.PI / 2);
-    sky(d, x1 + 0.02, cz, -Math.PI / 2);
+    sky(w, cx, m0 - 0.02, 0);
+    sky(d + md, x0 - 0.02, (z1 + m0) / 2, Math.PI / 2);
+    sky(d + md, x1 + 0.02, (z1 + m0) / 2, -Math.PI / 2);
 
     // the flower bed along the far fence
     const bx0 = 2.6, bx1 = 9.15, bz0 = z0 + 0.12, bz1 = z0 + 0.5;
@@ -1850,7 +1855,7 @@ export function buildScene(scene, renderer) {
     scatter(new THREE.CylinderGeometry(0.005, 0.005, 1, 5), yardMat(0x6fae7c), stems, root);
     for (const c of colours) scatter(new THREE.SphereGeometry(0.035, 10, 8), yardMat(+c), heads[c], root);
     yard.bed = [bx0, bx1, bz0, bz1];
-    yard.bounds = YARD;
+    yard.bounds = { x0: YARD.x0, x1: YARD.x1, z0: MEADOW.z0, z1: YARD.z1 };   // the yard and the meadow
     // along the front of the bed, bigger flowers she can pick (Space) and carry about
     {
       const petals = new THREE.Shape();
@@ -1903,6 +1908,78 @@ export function buildScene(scene, renderer) {
     cyl(0.08, 0.09, 0.16, paint(0x8fd3c4), 0, 0.08, 0, can);
     cyl(0.01, 0.016, 0.2, paint(0x8fd3c4), 0, 0.15, 0.13, can).rotation.x = 0.9;
     add(new THREE.TorusGeometry(0.06, 0.01, 8, 20, Math.PI), paint(0x8fd3c4), 0, 0.16, -0.02, can).rotation.y = Math.PI / 2;
+
+    // ---- the meadow, through the garden gate beside the flowers ----
+    // More lawn to run about on: daisies in the grass (flat, so she walks over them), round
+    // bushes along the fences, a little pond with lily pads in a ring of stones, and a
+    // picnic blanket with a basket.
+    const mg = grassTex.clone(); mg.needsUpdate = true; mg.repeat.set(w / 1.6, md / 1.6);
+    const meadow = add(new THREE.PlaneGeometry(w, md), yardMat(0xffffff, mg), cx, 0.002, mcz);
+    meadow.rotation.x = -Math.PI / 2;
+    meadow.castShadow = false;
+    add(new THREE.BoxGeometry(w, 0.3, md), mat(0x2a2326), cx, -0.152, mcz).castShadow = false;
+    // the gate: white pickets on a frame, hung on its west post; it starts shut and swings out into the meadow
+    for (const x of [GATE[0] - 0.05, GATE[1] + 0.05]) { box(0.09, 0.95, 0.09, white, x, 0.475, z0 + 0.04); ball(0.05, white, x, 0.98, z0 + 0.04); }
+    {
+      const gw = GATE[1] - GATE[0] - 0.04, gg = group(GATE[1] - 0.02, 0.06, z0 + 0.04, Math.PI);
+      for (const y of [0.15, 0.55]) box(gw, 0.06, 0.03, white, gw / 2, y, 0, gg);
+      box(gw * 1.05, 0.05, 0.025, white, gw / 2, 0.35, 0, gg).rotation.z = Math.atan2(0.4, gw);   // the brace
+      for (let i = 0; i < 6; i++) { const px = 0.05 + i * (gw - 0.1) / 5; box(0.065, 0.66, 0.022, white, px, 0.33, 0.02, gg); add(new THREE.ConeGeometry(0.05, 0.08, 4).rotateY(Math.PI / 4), white, px, 0.7, 0.02, gg); }
+      ball(0.025, gold, gw - 0.06, 0.45, 0.04, gg);
+      switchable(gg, 'gate', k => { gg.rotation.y = Math.PI + (Math.PI / 2 + 0.08 - Math.PI) * k; }, { on: false, speed: 1.4 });
+    }
+    // stepping stones from the gate
+    [[1.9, z0 - 0.45, 0.4], [2.2, z0 - 1.0, 1.0], [2.0, z0 - 1.55, 0.2]].forEach(([x, z, r]) => { const s = cyl(0.2, 0.21, 0.03, stone, x, 0.015, z); s.scale.z = 0.75; s.rotation.y = r; });
+    // daisies and clover flowers, flat in the grass
+    {
+      const daisy = [], pinkD = [], hearts = [], one3 = new THREE.Vector3(1, 1, 1);
+      for (let i = 0; i < 260; i++) {
+        const x = x0 + 0.3 + rand() * (w - 0.6), z = m0 + 0.3 + rand() * (md - 0.6);
+        if (Math.hypot((x - 6.6) / 1.4, (z - (m0 + 2.3)) / 1.05) < 1) continue;          // not in the pond
+        const s = 0.7 + rand() * 0.6, m4 = new THREE.Matrix4().compose(new THREE.Vector3(x, 0.012, z), q0, new THREE.Vector3(s, 1, s));
+        (rand() < 0.65 ? daisy : pinkD).push(m4);
+        hearts.push(new THREE.Matrix4().compose(new THREE.Vector3(x, 0.016, z), q0, new THREE.Vector3(s, 1, s)));
+      }
+      const petalsGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.006, 10), heartGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.008, 8);
+      scatter(petalsGeo, yardMat(0xffffff), daisy, root);
+      scatter(petalsGeo, yardMat(0xffc4dc), pinkD, root);
+      scatter(heartGeo, yardMat(0xffd34d), hearts, root);
+    }
+    // round bushes along the fences
+    const bushM = yardMat(0x6db86a), berry = yardMat(0xff7aa8);
+    for (const [x, z, r] of [[0.55, m0 + 0.6, 0.45], [0.5, m0 + 3.6, 0.38], [8.85, m0 + 0.65, 0.5], [8.9, m0 + 4.1, 0.4], [4.4, m0 + 0.5, 0.42]]) {
+      ball(r, bushM, x, r * 0.8, z, root, 1, 0.85, 1);
+      ball(r * 0.7, bushM, x + r * 0.5, r * 0.6, z + r * 0.3, root, 1, 0.85, 1);
+      for (let k = 0; k < 6; k++) ball(0.035, berry, x + Math.cos(k * 1.7) * r * 0.8, r * (0.6 + 0.25 * Math.sin(k)), z + Math.sin(k * 1.7) * r * 0.8, root);
+    }
+    // the pond
+    {
+      const px = 6.6, pz = m0 + 2.3, rx = 1.3, rz = 0.95;
+      const water = add(new THREE.CircleGeometry(1, 48), new THREE.MeshStandardMaterial({ color: 0x5fb8e8, roughness: 0.08, metalness: 0.2, emissive: 0x2f78a8, emissiveIntensity: 0.25 }), px, 0.012, pz);
+      water.rotation.x = -Math.PI / 2; water.scale.set(rx, rz, 1); water.castShadow = false;
+      const pondStone = yardMat(0xc9c2b6);
+      for (let k = 0; k < 22; k++) { const a = k / 22 * Math.PI * 2; ball(0.13 + rand() * 0.04, pondStone, px + Math.cos(a) * (rx + 0.05), 0.04, pz + Math.sin(a) * (rz + 0.05), root, 1, 0.55, 1); }
+      const pad = yardMat(0x58a85a);
+      for (const [dx, dz, r] of [[-0.4, 0.2, 0.17], [0.35, -0.25, 0.14], [0.55, 0.3, 0.12]]) {
+        const p = add(new THREE.CircleGeometry(r, 20, 0.3, Math.PI * 2 - 0.6), pad, px + dx, 0.018, pz + dz); p.rotation.x = -Math.PI / 2; p.castShadow = false;
+      }
+      ball(0.05, yardMat(0xffa8c8), px - 0.4, 0.05, pz + 0.2, root, 1, 0.7, 1);                     // a water lily
+    }
+    // a picnic blanket and basket
+    {
+      const ging = tex(128, 128, (g, s) => {
+        g.fillStyle = '#ffffff'; g.fillRect(0, 0, s, s);
+        g.fillStyle = 'rgba(244,122,160,0.55)';
+        for (let i = 0; i < 4; i++) { g.fillRect(i * 32, 0, 16, s); g.fillRect(0, i * 32, s, 16); }
+      }, 3, 2);
+      const bl = add(new THREE.PlaneGeometry(1.5, 1.1), yardMat(0xffffff, ging), 3.2, 0.006, m0 + 3.0);
+      bl.rotation.x = -Math.PI / 2; bl.rotation.z = 0.15; bl.castShadow = false;
+      const wicker = yardMat(0xc99a5e);
+      box(0.34, 0.2, 0.24, wicker, 2.55, 0.1, m0 + 2.55);
+      add(new THREE.TorusGeometry(0.13, 0.012, 6, 20, Math.PI), wicker, 2.55, 0.2, m0 + 2.55);
+      ball(0.04, yardMat(0xe0404f), 2.48, 0.22, m0 + 2.5); ball(0.04, yardMat(0xe0404f), 2.6, 0.22, m0 + 2.58);
+    }
+    yard.picnic = [3.2, m0 + 3.0];
   }
   // the back door, hung on its west side; it starts shut
   doorTrim('x', 0, YARD_DOOR);
