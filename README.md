@@ -19,6 +19,10 @@ East is the left of the sketch, so every window faces the sunrise:
 
 The parts of the sketch marked "not in" are left open, like courtyards.
 
+## The sky's feelings
+
+The sky feels whatever the squirrel feels. A cloud with a face, low in the east, shows it, and the weather follows: happy brings a brighter sky, fewer clouds and a rainbow in the west; sad, heavy grey clouds and rain; angry, a dark red stormy sky with rain and lightning; bored, a dull grey overcast; sleepy, a dim violet sky with twinkling stars and a dozing cloud. See it from the backyard (look east) or through the windows.
+
 ## Everly's squirrel
 
 A squirrel in a pink dress, from Everly's front and back drawings, made in the soft, round style of Animal Crossing. She lives in the kids' room.

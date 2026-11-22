@@ -834,6 +834,7 @@ export function buildScene(scene, renderer) {
     map: { value: landTex }, uSun: { value: sunDir },
     uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uGlow: { value: new THREE.Color() },
     uLand: { value: new THREE.Color() }, uCloud: { value: new THREE.Color() }, uDisc: { value: 0 }, uTime: { value: 0 },
+    uCover: { value: 0 }, uStars: { value: 0 }, uFlash: { value: 0 },          // the sky's feelings: more cloud, stars, lightning
   };
   const eye = 1.4, R = 45, tall = 22 * R / 20, y0 = eye - tall * (1 - LAND.horizon / LAND.h);   // horizon at eye level, most of the backdrop below it
   const pano = new THREE.Mesh(new THREE.CylinderGeometry(R, R, tall, 96, 1, true), new THREE.ShaderMaterial({
@@ -841,7 +842,7 @@ export function buildScene(scene, renderer) {
     vertexShader: `varying vec3 vDir; varying vec2 vUv;
       void main(){ vUv = uv; vDir = (modelMatrix * vec4(position, 1.)).xyz - vec3(0., ${eye.toFixed(1)}, 0.);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }`,
-    fragmentShader: `uniform sampler2D map; uniform vec3 uSun, uZenith, uHorizon, uGlow, uLand, uCloud; uniform float uDisc, uTime;
+    fragmentShader: `uniform sampler2D map; uniform vec3 uSun, uZenith, uHorizon, uGlow, uLand, uCloud; uniform float uDisc, uTime, uCover, uStars, uFlash;
       varying vec3 vDir; varying vec2 vUv;
       float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
       float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
@@ -856,12 +857,16 @@ export function buildScene(scene, renderer) {
         c += uDisc * vec3(1., .42, .1) * smoothstep(.99988, .99993, dot(d, uSun));          // the sun's disc
         if (d.y > 0.) {                                                                      // clouds, on a flat layer overhead
           vec2 cp = d.xz / (d.y + .12) * 1.4 + vec2(uTime * .012, uTime * .004);             // drifting on the wind
-          float dens = fbm(cp), cover = smoothstep(.5, .74, dens);
+          float dens = fbm(cp), cover = smoothstep(.5 - uCover, .74 - uCover * .6, dens);
           float thin = clamp((dens - fbm(cp + normalize(uSun.xz) * .35)) * 3. + .5, 0., 1.); // less cloud towards the sun = lit side
           vec3 cl = mix(uCloud * .3, uCloud * 1.5 + uGlow * .7 * pow(toSun, 2.), thin);
           cl += uGlow * 1.4 * pow(toSun, 12.) * (1. - cover * .5);                           // edges catch fire near the sun
           c = mix(c, cl, cover * smoothstep(0., .1, d.y) * .92);
+          vec2 sp = floor(d.xz / (d.y + .15) * 90.);                                         // stars, when the sky is sleepy
+          float tw = .6 + .4 * sin(uTime * 2. + hash(sp + 3.) * 30.);
+          c += uStars * step(.993, hash(sp)) * tw * (1. - cover) * smoothstep(.05, .3, d.y) * vec3(1., .95, .8);
         }
+        c += uFlash * vec3(.75, .75, 1.);                                                    // lightning
         vec4 t = texture2D(map, vUv);                                                        // the land, in front of all that
         gl_FragColor = vec4(mix(c, t.rgb * uLand * (1. + 1.5 * pow(sameSide, 4.)), t.a), 1.);
       }`,
@@ -1840,9 +1845,9 @@ export function buildScene(scene, renderer) {
         if (y0) outdoorOnly.push(p);
       }
     };
-    sky(w, cx, m0 - 0.02, 0);
-    sky(d + md, x0 - 0.02, (z1 + m0) / 2, Math.PI / 2);
-    sky(d + md, x1 + 0.02, (z1 + m0) / 2, -Math.PI / 2);
+    sky(w + 0.2, cx, m0 - 0.02, 0);                                      // a little wider, so no seam shows at the corners
+    sky(d + md + 0.2, x0 - 0.02, (z1 + m0) / 2, Math.PI / 2);
+    sky(d + md + 0.2, x1 + 0.02, (z1 + m0) / 2, -Math.PI / 2);
 
     // the flower bed along the far fence
     const bx0 = 2.6, bx1 = 9.15, bz0 = z0 + 0.12, bz1 = z0 + 0.5;
@@ -2673,8 +2678,156 @@ export function buildScene(scene, renderer) {
   const blend = (out, a, b, t) => out.setRGB(lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t));
   const landBase = new THREE.Color(0x7a8348);
   // outdoors (0 to 1): with the view out in the yard, the open sky lights things more
-  let outK = 0, baseSky = 0.03, baseEnv = 0.06;
-  const applyOutdoors = () => { skyFill.intensity = baseSky * (1 + 6 * outK); scene.environmentIntensity = baseEnv * (1 + 2 * outK); };
+  let outK = 0, baseSky = 0.03, baseEnv = 0.06, moodLight = 1, flash = 0;
+  const applyOutdoors = () => { skyFill.intensity = baseSky * (1 + 6 * outK) * moodLight + flash * 0.5; scene.environmentIntensity = baseEnv * (1 + 2 * outK) * moodLight; };
+
+  // ---------- the sky's feelings ----------
+  // The sky feels what the squirrel feels. A cloud with a face, low in the east, shows it;
+  // the weather follows: happy brings a brighter sky with fewer clouds and a rainbow, sad
+  // heavy grey cloud and rain, angry dark red cloud, rain and lightning, bored a dull grey
+  // overcast, sleepy a dim violet sky with twinkling stars. Changes ease in over a second or two.
+  const MOOD_KEYS = ['neutral', 'happy', 'sad', 'angry', 'bored', 'sleepy'];
+  const skyFeel = { target: 'neutral', w: Object.fromEntries(MOOD_KEYS.map(k => [k, k === 'neutral' ? 1 : 0])), dawn: 0, t: 0, nextBolt: 4, shown: null, squash: 0 };
+  const skyBase = { zenith: new THREE.Color(), horizon: new THREE.Color(), glow: new THREE.Color(), land: new THREE.Color(), cloud: new THREE.Color(), vol: new THREE.Color(), sun: 0, bounce: [] };
+  function saveSkyBase(power, dawn) {
+    skyBase.zenith.copy(sky.uZenith.value); skyBase.horizon.copy(sky.uHorizon.value); skyBase.glow.copy(sky.uGlow.value);
+    skyBase.land.copy(sky.uLand.value); skyBase.cloud.copy(sky.uCloud.value); skyBase.vol.copy(volumetric.color);
+    skyBase.sun = sun.intensity; skyBase.bounce = bounces.map(([l]) => l.intensity);
+    skyFeel.dawn = dawn;
+  }
+  const grey = (c, k) => { const l = 0.3 * c.r + 0.59 * c.g + 0.11 * c.b; return c.lerp(new THREE.Color(l, l, l), k); };
+  function applyMood() {
+    const w = skyFeel.w, gloom = w.sad + w.angry;
+    const bright = 1 + 0.3 * w.happy - 0.4 * w.sad - 0.5 * w.angry - 0.3 * w.bored - 0.45 * w.sleepy;
+    const tint = new THREE.Color(1, 1, 1).lerp(new THREE.Color(1.5, 0.6, 0.55), w.angry).lerp(new THREE.Color(0.75, 0.7, 1.35), w.sleepy);
+    const fade = 0.7 * w.sad + 0.55 * w.bored + 0.35 * w.angry;
+    sky.uZenith.value.copy(skyBase.zenith).multiplyScalar(bright).multiply(tint); grey(sky.uZenith.value, fade);
+    sky.uHorizon.value.copy(skyBase.horizon).multiplyScalar(bright).multiply(tint); grey(sky.uHorizon.value, fade);
+    sky.uGlow.value.copy(skyBase.glow).multiplyScalar(Math.max(0.15, 1 - 0.8 * gloom - 0.5 * w.bored - 0.4 * w.sleepy));
+    sky.uLand.value.copy(skyBase.land).multiplyScalar(Math.max(0.4, bright));
+    sky.uCloud.value.copy(skyBase.cloud).multiplyScalar(1 - 0.55 * gloom - 0.2 * w.bored).multiply(tint); grey(sky.uCloud.value, 0.6 * w.sad + 0.5 * w.bored);
+    sky.uCover.value = 0.16 * w.sad + 0.2 * w.angry + 0.12 * w.bored - 0.1 * w.happy;
+    sky.uStars.value = w.sleepy * 1.4;
+    sky.uFlash.value = flash;
+    moodLight = Math.max(0.35, 1 + 0.15 * w.happy - 0.45 * w.sad - 0.4 * w.angry - 0.3 * w.bored - 0.35 * w.sleepy);
+    sun.intensity = skyBase.sun * moodLight;
+    bounces.forEach(([l], i) => { l.intensity = (skyBase.bounce[i] || 0) * moodLight; });
+    volumetric.color.copy(skyBase.vol).multiplyScalar(moodLight);
+    applyOutdoors();
+  }
+
+  // the cloud with a face
+  const faceTex = {}, drawFace = mood => tex(512, 384, (g, W, Hh) => {
+    g.fillStyle = '#ffffff';
+    for (const [x, y, r] of [[150, 230, 95], [250, 175, 120], [360, 215, 100], [430, 260, 70], [85, 275, 62], [250, 285, 100]]) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = 'rgba(255,170,190,0.55)';                                   // cheeks
+    if (mood !== 'bored') for (const x of [165, 345]) { g.beginPath(); g.ellipse(x, 262, 30, 18, 0, 0, Math.PI * 2); g.fill(); }
+    g.strokeStyle = g.fillStyle = '#4a3b5c'; g.lineWidth = 11; g.lineCap = 'round';
+    const eyeY = 215, ex = [200, 310];
+    const arc = (x, y, r, a0, a1) => { g.beginPath(); g.arc(x, y, r, a0, a1); g.stroke(); };
+    if (mood === 'happy') {
+      for (const x of ex) arc(x, eyeY + 8, 20, Math.PI * 1.1, Math.PI * 1.9);
+      g.beginPath(); g.moveTo(205, 255); g.quadraticCurveTo(255, 330, 305, 255); g.closePath(); g.fill();
+      g.fillStyle = '#ff8fab'; g.beginPath(); g.ellipse(255, 292, 22, 12, 0, 0, Math.PI * 2); g.fill();
+    } else if (mood === 'sad') {
+      for (const x of ex) { g.beginPath(); g.arc(x, eyeY, 13, 0, Math.PI * 2); g.fill(); }
+      g.beginPath(); g.moveTo(178, 180); g.lineTo(215, 168); g.stroke(); g.beginPath(); g.moveTo(332, 180); g.lineTo(295, 168); g.stroke();
+      arc(255, 312, 34, Math.PI * 1.15, Math.PI * 1.85);
+      g.fillStyle = '#7cc4f2';
+      for (const x of [195, 315]) { g.beginPath(); g.moveTo(x, 235); g.quadraticCurveTo(x - 14, 262, x, 268); g.quadraticCurveTo(x + 14, 262, x, 235); g.fill(); }
+    } else if (mood === 'angry') {
+      for (const x of ex) { g.beginPath(); g.arc(x, eyeY + 5, 12, 0, Math.PI * 2); g.fill(); }
+      g.lineWidth = 13; g.beginPath(); g.moveTo(170, 175); g.lineTo(225, 195); g.stroke(); g.beginPath(); g.moveTo(340, 175); g.lineTo(285, 195); g.stroke();
+      g.lineWidth = 11; g.beginPath(); g.moveTo(215, 290); g.lineTo(235, 278); g.lineTo(255, 290); g.lineTo(275, 278); g.lineTo(295, 290); g.stroke();
+    } else if (mood === 'bored') {
+      for (const x of ex) { g.beginPath(); g.arc(x, eyeY + 4, 14, 0, Math.PI); g.fill(); g.beginPath(); g.moveTo(x - 22, eyeY + 4); g.lineTo(x + 22, eyeY + 4); g.stroke(); }
+      g.beginPath(); g.moveTo(225, 285); g.lineTo(290, 282); g.stroke();
+      g.fillStyle = '#4a3b5c'; for (const x of [395, 420, 445]) { g.beginPath(); g.arc(x, 300, 6, 0, Math.PI * 2); g.fill(); }
+    } else if (mood === 'sleepy') {
+      for (const x of ex) arc(x, eyeY - 6, 20, Math.PI * 0.15, Math.PI * 0.85);
+      g.beginPath(); g.ellipse(255, 285, 13, 16, 0, 0, Math.PI * 2); g.stroke();
+      g.font = 'bold 52px sans-serif'; g.fillText('z', 380, 150); g.font = 'bold 38px sans-serif'; g.fillText('z', 420, 110);
+    } else {
+      for (const x of ex) { g.beginPath(); g.arc(x, eyeY, 13, 0, Math.PI * 2); g.fill(); }
+      arc(255, 248, 34, Math.PI * 0.2, Math.PI * 0.8);
+    }
+  }, 1, 1);
+  const faceMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, ...throughWindows });
+  const skyFace = new THREE.Mesh(new THREE.PlaneGeometry(10, 7.5), faceMat);
+  const faceHome = new THREE.Vector3(-Math.cos(0.35) * 33, 1.4 + 33 * Math.sin(0.24), -Math.sin(0.35) * 33);   // low in the east, a little south
+  skyFace.position.copy(faceHome);
+  skyFace.renderOrder = -0.5;
+  outside.add(skyFace);
+  // the rainbow, opposite the sun (west-south-west), when the sky is happy
+  const rainbow = new THREE.Group();
+  ['#ff5a5a', '#ff9f43', '#ffe14d', '#6fd36f', '#5aa9f0', '#6a6ae8', '#b06ae8'].forEach((c, i) => {
+    const arcM = new THREE.Mesh(new THREE.TorusGeometry(15 - i * 0.42, 0.22, 6, 80, Math.PI), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0, depthWrite: false, ...throughWindows }));
+    rainbow.add(arcM);
+  });
+  rainbow.position.set(24, -4, -26);
+  rainbow.lookAt(0, -4, 0);
+  rainbow.renderOrder = -0.5;
+  outside.add(rainbow);
+  // rain: over the yard and the meadow (real, so it falls in front of things), and further
+  // out, seen only through the windows and over the fences
+  function rainField(n, spawn, material) {
+    const pos = new Float32Array(n * 6), geo = new THREE.BufferGeometry(), drops = [];
+    for (let i = 0; i < n; i++) { const p = spawn(); p.y = Math.random() * 9; drops.push(p); }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const lines = new THREE.LineSegments(geo, material);
+    lines.frustumCulled = false;
+    lines.visible = false;
+    return { lines, drops, spawn, pos };
+  }
+  const rainMat = o => new THREE.LineBasicMaterial({ color: 0xbfd8f2, transparent: true, opacity: 0, depthWrite: false, ...o });
+  const W2 = (x, z) => new THREE.Vector3(x - CX, 0, z - CZ);
+  const yardRain = rainField(900, () => {
+    for (;;) {
+      const x = YARD.x0 + Math.random() * (YARD.x1 - YARD.x0), z = MEADOW.z0 + Math.random() * (YARD.z1 - MEADOW.z0);
+      if (!(x > NAT.x0 - 0.3 && x < NAT.x1 + 0.3 && z > NAT.z0 - 0.3 && z < NAT.z1 + 0.3)) return W2(x, z);
+    }
+  }, rainMat());
+  const farRain = rainField(1400, () => { const a = Math.random() * Math.PI * 2, r = 7 + Math.random() * 16; return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r); }, rainMat(throughWindows));
+  scene.add(yardRain.lines); outside.add(farRain.lines);
+  hideFromAO.push(yardRain.lines);
+  function stepRain(field, dt, amount) {
+    field.lines.visible = amount > 0.02;
+    field.lines.material.opacity = 0.55 * amount;
+    if (!field.lines.visible) return;
+    const { drops, pos } = field;
+    for (let i = 0; i < drops.length; i++) {
+      const p = drops[i];
+      p.y -= dt * 7;
+      if (p.y < 0) { const q = field.spawn(); p.x = q.x; p.z = q.z; p.y = 8 + Math.random(); }
+      pos.set([p.x, p.y, p.z, p.x - 0.03, p.y + 0.28, p.z], i * 6);
+    }
+    field.lines.geometry.attributes.position.needsUpdate = true;
+  }
+  function setSkyMood(mood) { skyFeel.target = MOOD_KEYS.includes(mood) ? mood : 'neutral'; }
+  function tickSky(dt, camera) {
+    const f = skyFeel, w = f.w, k = Math.min(1, dt * 1.2);
+    f.t += dt;
+    for (const m of MOOD_KEYS) w[m] += ((m === f.target ? 1 : 0) - w[m]) * k;
+    // the face changes with a little squash and bounce
+    if (f.shown !== f.target) { f.shown = f.target; faceMat.map = faceTex[f.target] ||= drawFace(f.target); faceMat.needsUpdate = true; f.squash = 1; }
+    f.squash = Math.max(0, f.squash - dt * 2);
+    const sq = Math.sin(f.squash * Math.PI * 2) * f.squash * 0.25;
+    skyFace.scale.set(1 + sq, 1 - sq, 1);
+    skyFace.position.copy(faceHome).add(new THREE.Vector3(0, Math.sin(f.t * 0.8) * 0.4 + (f.target === 'sleepy' ? -0.6 : 0), Math.sin(f.t * 0.5) * 0.3));
+    if (camera) skyFace.lookAt(camera.position);
+    const lit = 0.3 + 0.7 * f.dawn;
+    faceMat.color.setRGB(lit, lit, lit).multiply(new THREE.Color(1, 1, 1).lerp(new THREE.Color(0.75, 0.6, 0.6), w.angry).lerp(new THREE.Color(0.72, 0.74, 0.8), w.sad + w.bored * 0.6).lerp(new THREE.Color(0.75, 0.72, 1), w.sleepy));
+    for (const m of rainbow.children) m.material.opacity = 0.5 * w.happy * f.dawn;
+    // lightning, when the sky is cross
+    f.nextBolt -= dt;
+    if (w.angry > 0.6 && f.nextBolt < 0) { flash = 1.2; f.nextBolt = 3 + Math.random() * 4; f.second = 0.18; }
+    if (f.second !== undefined) { f.second -= dt; if (f.second < 0) { flash = Math.max(flash, 0.9); f.second = undefined; } }
+    flash = Math.max(0, flash - dt * 6);
+    const rain = Math.max(w.sad * 0.9, w.angry);
+    stepRain(yardRain, dt, rain);
+    stepRain(farRain, dt, rain);
+    applyMood();
+  }
   function setSun(minutes) {
     const el = 0.183 * minutes, az = 1.5 + 0.17 * minutes;                     // degrees up, degrees south of east
     sunDir.set(-Math.cos(az * DEG2RAD) * Math.cos(el * DEG2RAD), Math.sin(el * DEG2RAD), -Math.sin(az * DEG2RAD) * Math.cos(el * DEG2RAD));   // -x east, -z south
@@ -2703,6 +2856,8 @@ export function buildScene(scene, renderer) {
     for (const [m, tint] of townMats) m.emissive.copy(tint).multiply(sky.uHorizon.value).multiplyScalar(0.9);
 
     blend(volumetric.color, [1, 0.2, 0.04], [1, 0.46, 0.17], day).multiplyScalar(power / 11);
+    saveSkyBase(power, dawn);
+    applyMood();
     return { exposure: lerp(1.4, 1.0, ramp(el, 0, 4)), progress: ramp(minutes, SUNRISE.start, 35) };
   }
   // seconds of breeze so far, and how hard it is blowing (0..1); returns the current swell for the sound of it
@@ -2732,5 +2887,5 @@ export function buildScene(scene, renderer) {
   renderSunDepth();
   for (const o of outdoorOnly) o.visible = false;
 
-  return { get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); for (const o of outdoorOnly) o.visible = k > 0.5; }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard, inNatalie: v => v.x + CX > NAT.x0 && v.x + CX < NAT.x1 && v.z + CZ > NAT.z0 && v.z + CZ < NAT.z1 };
+  return { setSkyMood, tickSky, get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); for (const o of outdoorOnly) o.visible = k > 0.5; }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard, inNatalie: v => v.x + CX > NAT.x0 && v.x + CX < NAT.x1 && v.z + CZ > NAT.z0 && v.z + CZ < NAT.z1 };
 }
