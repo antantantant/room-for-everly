@@ -24,7 +24,7 @@ const LIVING_WIN = [1.3, 2.7, 0.9, 2.25], BED_WIN = [7.15, 8.25, 1.2, 2.3], KIDS
 // doorways: [from, to] along their wall
 const HALL_DOOR = [3.95, 4.8], EN_SUITE = [6.7, 7.6], DOOR5 = [3.95, 4.8], KIDS_DOOR = [10.25, 11.15];
 // the backyard, south of the kitchen (z below 0), and its door in the south wall beside the fridge
-export const YARD = { x0: 3.9, x1: 9.4, z0: -3.8, z1: 0 };
+export const YARD = { x0: 0, x1: 9.4, z0: -7.4, z1: 0 };   // the whole width of the house, 7.4 m deep
 const YARD_DOOR = [8.25, 9.1];
 
 // The sun moves: buildScene().setSun(minutes) places it. Sunrise is minute 0.
@@ -41,7 +41,7 @@ export const views = {
   bedroom:  [w(3.5, 1.65, 9.65), w(0.7, 0.8, 7.0)],
   bathroom: [w(5.3, 1.75, 8.15), w(7.4, 0.95, 6.25)],
   kids:     [w(5.5, 1.6, 13.2), w(8.6, 0.9, 10.9)],
-  yard:     [w(5.7, 1.5, -3.6), w(7.5, 1.7, 0.2)],
+  yard:     [w(0.7, 2.7, -0.5), w(5.0, 0.2, -5.4)],
   plan:     [[0, 22, -1.899], [0, 0, -1.9]],
 };
 
@@ -679,7 +679,7 @@ export function buildScene(scene, renderer) {
   sun.shadow.normalBias = 0.015;
   sun.shadow.radius = 2;
   // The sun comes from the east (-x), so its shadow camera spans the home's whole north-south length.
-  const sunBox = { left: -11, right: 11, top: 2.8, bottom: -2.8, near: 0.5, far: 30 };
+  const sunBox = { left: -15, right: 15, top: 2.8, bottom: -2.8, near: 0.5, far: 30 };
   Object.assign(sun.shadow.camera, sunBox);
   scene.add(sun, sun.target);
 
@@ -952,13 +952,13 @@ export function buildScene(scene, renderer) {
       outside.add(hedge);
       const at = (o, a, r, y = 0) => { o.position.set(Math.cos(a) * r, y, Math.sin(a) * r); outside.add(o); return o; };
       // round trees, kept off the line to the sunrise (due east is -x: angle PI)
-      for (const [a, r, s] of [[1.9, 13, 1.2], [2.5, 15, 1.4], [3.95, 14, 1.3], [4.65, 12.5, 1.0], [1.3, 14, 1.4], [0.6, 13.5, 1.2], [5.2, 14.5, 1.5], [5.9, 13, 1.1]]) {
+      for (const [a, r, s] of [[1.9, 13, 1.2], [2.5, 15, 1.4], [3.95, 14, 1.3], [3.6, 12.5, 1.0], [1.3, 14, 1.4], [0.6, 13.5, 1.2], [5.2, 14.5, 1.5], [5.9, 13, 1.1]]) {
         at(new THREE.Mesh(new THREE.CylinderGeometry(0.12 * s, 0.16 * s, 1.6 * s, 8), trunkMat), a, r, 0.8 * s);
         at(new THREE.Mesh(new THREE.SphereGeometry(1.1 * s, 16, 12), leafMat), a, r, 2.1 * s);
       }
       // two cottages along the hilltop, north-east and south-east
       const wallM = openAir(sidingTex, 0xfff4e8), roofM = openAir(shingleTex, 0xc8d8f0);
-      for (const [a, r, rot] of [[2.15, 14.2, 0.5], [4.25, 14.4, -0.6]]) {
+      for (const [a, r, rot] of [[2.15, 14.2, 0.5], [3.9, 14.6, -0.6]]) {
         const c = at(new THREE.Group(), a, r);
         c.rotation.y = rot;
         const body = new THREE.Mesh(new THREE.BoxGeometry(4, 2.6, 3), wallM);
@@ -1836,7 +1836,7 @@ export function buildScene(scene, renderer) {
     sky(d, x1 + 0.02, cz, -Math.PI / 2);
 
     // the flower bed along the far fence
-    const bx0 = 5.5, bx1 = 9.15, bz0 = z0 + 0.12, bz1 = z0 + 0.5;
+    const bx0 = 2.6, bx1 = 9.15, bz0 = z0 + 0.12, bz1 = z0 + 0.5;
     const edge = yardMat(0xf2e6d8);
     box(bx1 - bx0, 0.16, 0.04, edge, (bx0 + bx1) / 2, 0.08, bz1);
     for (const x of [bx0, bx1]) box(0.04, 0.16, bz1 - bz0, edge, x, 0.08, (bz0 + bz1) / 2);
@@ -1850,6 +1850,7 @@ export function buildScene(scene, renderer) {
     scatter(new THREE.CylinderGeometry(0.005, 0.005, 1, 5), yardMat(0x6fae7c), stems, root);
     for (const c of colours) scatter(new THREE.SphereGeometry(0.035, 10, 8), yardMat(+c), heads[c], root);
     yard.bed = [bx0, bx1, bz0, bz1];
+    yard.bounds = YARD;
     // along the front of the bed, bigger flowers she can pick (Space) and carry about
     {
       const petals = new THREE.Shape();
@@ -1873,13 +1874,13 @@ export function buildScene(scene, renderer) {
     }
 
     // a little apple tree in the corner
-    const tg = group(4.75, 0, z0 + 0.95);
+    const tg = group(x0 + 1.2, 0, z0 + 1.3);
     cyl(0.08, 0.12, 1.5, yardMat(0x9b7357), 0, 0.75, 0, tg);
     const crown = group(0, 1.55, 0, 0, tg), leaves = yardMat(0x86c46f), apple = yardMat(0xe0404f);
     [[0, 0.35, 0, 0.6], [0.38, 0.1, 0.1, 0.42], [-0.35, 0.15, -0.1, 0.45], [0.05, 0.05, 0.38, 0.42], [0, 0.12, -0.38, 0.4], [0.1, 0.72, 0.05, 0.4]].forEach(([x, y, z, r]) => ball(r, leaves, x, y, z, crown));
     for (let i = 0; i < 9; i++) { const a = i * 2.4, y = 0.05 + (i % 3) * 0.28; ball(0.05, apple, Math.cos(a) * 0.55, y, Math.sin(a) * 0.55, crown); }
     live.add(crown);
-    yard.tree = { obj: tg, crown, x: 4.75, z: z0 + 0.95 };
+    yard.tree = { obj: tg, crown, x: x0 + 1.2, z: z0 + 1.3 };
 
     // the swing: an A-frame, the seat hanging from a pivot so it can swing
     const sx = 6.5, sz = -1.75, top = 1.85, len = 1.4, frame = yardMat(0xf2a9be);

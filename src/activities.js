@@ -650,7 +650,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       { box: box(room.yard.swing.x - 0.3, room.yard.swing.x + 0.3, 0, 0.6, room.yard.swing.z - 0.15, room.yard.swing.z + 0.15), acts: ['swing', 'swingHigh'] },
       { box: box(room.yard.bed[0], room.yard.bed[1], 0, 0.5, room.yard.bed[2], room.yard.bed[3]), acts: ['smellFlowers', 'waterFlowers'] },
       { box: box(room.yard.tree.x - 0.15, room.yard.tree.x + 0.15, 0, 1.4, room.yard.tree.z - 0.15, room.yard.tree.z + 0.15), acts: ['treeShake', 'treeHug'], reach: 0.45 },
-      { box: box(3.9, 9.4, 0, 0.03, -3.8, 0), acts: ['grassClouds', 'cartwheel', 'rugRoll', 'rugHop'], rug: true },
+      { box: box(room.yard.bounds.x0, room.yard.bounds.x1, 0, 0.03, room.yard.bounds.z0, room.yard.bounds.z1), acts: ['grassClouds', 'cartwheel', 'rugRoll', 'rugHop'], rug: true },
     ] : []),
   ];
   // the movable things: wherever they have been put

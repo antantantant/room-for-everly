@@ -14,7 +14,7 @@ East is the left of the sketch, so every window faces the sunrise:
 - **Main bedroom**: the bed (1) under the east window, a wardrobe (2), a bedside table and lamp (3), a floor lamp (4), and a desk with a laptop (6). A short hallway leads to the living room, and door 5 opens into a little hall to the kids' room.
 - **The big bathroom**: a vanity with the sink (14), floss and toothbrushes; a toilet room (15) with a small basin and a paper holder; a glass shower; and two walk-in closets (12, 13), each with a mirror.
 - **Kids' room**: a bunk bed (9), a table (10) and two wardrobes (7, 8), with a My Melody plush on each bunk.
-- **Backyard**: through the back door beside the fridge (it starts shut; Space opens it): a lawn behind a white picket fence, stepping stones, a swing, a little apple tree, a flower bed (the big flowers along its front can be picked with Space and carried anywhere; L puts one back), a ball and a watering can. On a doormat just outside the back door are pink sneakers and yellow rain boots: stand by a pair and press B to put them on, and B again to take them off. The Backyard button shows it.
+- **Backyard**: through the back door beside the fridge (it starts shut; Space opens it): a big lawn (the whole width of the house and over 7 m deep) behind a white picket fence, stepping stones, a swing, a little apple tree, a flower bed (the big flowers along its front can be picked with Space and carried anywhere; L puts one back), a ball and a watering can. On a doormat just outside the back door are pink sneakers and yellow rain boots: stand by a pair and press B to put them on, and B again to take them off. The Backyard button shows it.
 
 The parts of the sketch marked "not in" are left open, like courtyards.
 

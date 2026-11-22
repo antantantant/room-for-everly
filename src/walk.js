@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 
 const CELL = 0.025;                         // metres per pixel of the floor map
-const BOUNDS = { x0: -5, x1: 5, z0: -10.8, z1: 7.2 };   // the home and its backyard to the south
+const BOUNDS = { x0: -5, x1: 5, z0: -14.6, z1: 7.2 };   // the home and its backyard to the south
 const CUT = 1.0;                            // things higher than this cannot get in her way
 const STEP = 0.07;                          // anything lower than this is floor (rugs, door sills)
 const RADIUS = 0.2;                         // how much room she needs around her middle
