@@ -35,7 +35,7 @@
 <script>
 // GitHub Pages lets browsers keep this page for ten minutes. If a newer version has
 // been published since, fetch it fresh (which also refreshes the browser's copy) and reload once.
-const BUILD = '18';
+const BUILD = '19';
 fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
   const live = (t.match(/const BUILD = '([^']+)'/) || [])[1];
   if (!live || live === BUILD) return;
@@ -74,15 +74,15 @@ fetch(location.href, { cache: 'reload' }).then(r => r.text()).then(t => {
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bump ?v= whenever src/ changes: it stops a browser pairing this page with an older cached module.
-import { createPipeline } from './src/pipeline.js?v=18';
-import { buildScene, views, SUNRISE } from './src/scene.js?v=18';
-import { createMusic } from './src/audio.js?v=18';
-import { createSquirrel } from './src/squirrel.js?v=18';
-import { createWalker } from './src/walk.js?v=18';
-import { createFeelings } from './src/feelings.js?v=18';
-import { createInteraction } from './src/interact.js?v=18';
-import { createShoes } from './src/shoes.js?v=18';
-import { createActivities } from './src/activities.js?v=18';
+import { createPipeline } from './src/pipeline.js?v=19';
+import { buildScene, views, SUNRISE } from './src/scene.js?v=19';
+import { createMusic } from './src/audio.js?v=19';
+import { createSquirrel } from './src/squirrel.js?v=19';
+import { createWalker } from './src/walk.js?v=19';
+import { createFeelings } from './src/feelings.js?v=19';
+import { createInteraction } from './src/interact.js?v=19';
+import { createShoes } from './src/shoes.js?v=19';
+import { createActivities } from './src/activities.js?v=19';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 100);

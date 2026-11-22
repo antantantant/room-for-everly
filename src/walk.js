@@ -52,7 +52,7 @@ function floorMap(scene, renderer, hidden) {
   renderer.setRenderTarget(target);
   renderer.setClearColor(0xff0000, 1);      // nothing there (no floor) reads as blocked
   const blocked = new Uint8Array(W * D), top = new Uint8Array(W * D), px = new Uint8Array(W * D * 4);
-  for (const [sx, sz] of [[0, 0], [0.1, 0], [-0.1, 0], [0, 0.1], [0, -0.1]]) {
+  for (const [sx, sz] of [[0, 0], [0.04, 0], [-0.04, 0], [0, 0.04], [0, -0.04]]) {   // a slight lean is enough to catch upright faces, without fattening walls
     height.uniforms.uSlant.value.set(sx, sz);
     renderer.clear();
     renderer.render(scene, cam);
@@ -156,10 +156,36 @@ export function createWalker({ squirrel, scene, renderer, camera, controls, hidd
       // step, sliding along walls rather than stopping dead; if something has been
       // put down on top of her, she can walk out of it
       const step = SPEED * style.speed * dt, p = group.position, x0 = p.x, z0 = p.z;
-      const nx = x0 + move.x * step, nz = z0 + move.z * step;
-      if (!isFree(x0, z0) || isFree(nx, nz)) { p.x = nx; p.z = nz; }
-      else if (isFree(nx, z0)) p.x = nx;
-      else if (isFree(x0, nz)) p.z = nz;
+      if (!isFree(x0, z0)) { p.x += move.x * step; p.z += move.z * step; }
+      else {
+        // Go the way she is going if it is clear for a good way ahead. If something is in the
+        // way (a wall beside a door, a door frame, a table leg), look a little either side and
+        // take the turn that opens up the most room ahead, favouring small turns: she glides
+        // round frames and corners and into doorways instead of stopping. Turns beyond 80°
+        // would not take her anywhere she wants to go.
+        const want = Math.atan2(move.x, move.z);
+        const reach = (dx, dz) => { let d = 0; while (d < 0.8 && isFree(x0 + dx * (d + 0.05), z0 + dz * (d + 0.05))) d += 0.05; return d; };
+        let best = null, bestScore = -1;
+        for (const a of [0, 0.2, -0.2, 0.4, -0.4, 0.65, -0.65, 0.9, -0.9, 1.15, -1.15, 1.4, -1.4]) {
+          const dx = Math.sin(want + a), dz = Math.cos(want + a), k = step * Math.max(0.4, Math.cos(a));
+          if (!isFree(x0 + dx * k, z0 + dz * k)) continue;
+          const r = reach(dx, dz);
+          if (a === 0 && r >= 0.8) { best = [dx, dz, k]; break; }                // the way ahead is clear
+          const score = r * (0.35 + 0.65 * Math.cos(a));
+          if (score > bestScore + 1e-6) { bestScore = score; best = [dx, dz, k]; }
+        }
+        if (best) { p.x = x0 + best[0] * best[2]; p.z = z0 + best[1] * best[2]; }
+        // In a narrow gap (a doorway), drift towards its middle, so she never scrapes a
+        // jamb or the open door. Measure the room on each side, across the way she is going.
+        if (p.x !== x0 || p.z !== z0) {
+          const lx = -move.z, lz = move.x, room = sx => { let n = 0; while (n < 12 && isFree(p.x + lx * sx * (n + 1) * CELL, p.z + lz * sx * (n + 1) * CELL)) n++; return n; };
+          const L = room(1), R = room(-1);
+          if (L + R < 20 && Math.abs(L - R) > 1) {
+            const shift = Math.min(step * 0.7, Math.abs(L - R) / 2 * CELL) * Math.sign(L - R);
+            if (isFree(p.x + lx * shift, p.z + lz * shift)) { p.x += lx * shift; p.z += lz * shift; }
+          }
+        }
+      }
       walked = Math.hypot(p.x - x0, p.z - z0);
       bumped = walked < step * 0.3;
       if (walked) {
