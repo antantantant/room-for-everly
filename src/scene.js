@@ -46,7 +46,7 @@ export const views = {
   bathroom: [w(5.3, 1.75, 8.15), w(7.4, 0.95, 6.25)],
   kids:     [w(5.5, 1.6, 13.2), w(8.6, 0.9, 10.9)],
   yard:     [w(0.7, 2.7, -0.5), w(5.0, 0.2, -5.4)],
-  natalie:  [w(5.0, 1.75, -13.75), w(7.9, 0.6, -16.3)],
+  natalie:  [w(8.6, 2.0, -13.8), w(5.6, 1.1, -16.4)],
   plan:     [[0, 22, -1.899], [0, 0, -1.9]],
 };
 
@@ -75,7 +75,8 @@ export function buildScene(scene, renderer) {
     return matCache.get(key);
   };
 
-  function add(geo, material, x, y, z, parent = root) {
+  let cur = root;                           // where add() and group() put things unless told (Natalie's room borrows this)
+  function add(geo, material, x, y, z, parent = cur) {
     const m = new THREE.Mesh(geo, material);
     m.position.set(x, y, z);
     m.castShadow = m.receiveShadow = true;
@@ -95,7 +96,7 @@ export function buildScene(scene, renderer) {
   };
   const cyl = (rTop, rBottom, h, material, x, y, z, parent) =>
     add(new THREE.CylinderGeometry(rTop, rBottom, h, 28), material, x, y, z, parent);
-  const group = (x, y, z, rotY = 0, parent = root) => {
+  const group = (x, y, z, rotY = 0, parent = cur) => {
     const g = new THREE.Group();
     g.position.set(x, y, z);
     g.rotation.y = rotY;
@@ -2003,12 +2004,12 @@ export function buildScene(scene, renderer) {
   // (shown only while the camera is outdoors, like the house's).
   const natRoof = group(0, 0, 0);
   {
-    const { x0, x1, z0, z1 } = NAT, [d0, d1] = NAT_DOOR, cxn = (x0 + x1) / 2, czn = (z0 + z1) / 2, wz = [czn - 0.55, czn + 0.55];
-    const lav = mat(0xe8defc, plasterTex, { roughness: 1, shadowSide: THREE.DoubleSide, bumpMap: plasterTex, bumpScale: 0.5 });
+    const { x0, x1, z0, z1 } = NAT, [d0, d1] = NAT_DOOR, cxn = (x0 + x1) / 2, czn = (z0 + z1) / 2, wz = [-15.85, -14.85], wx = [7.0, 8.0];
+    const lav = mat(0xfbe3ea, plasterTex, { roughness: 1, shadowSide: THREE.DoubleSide, bumpMap: plasterTex, bumpScale: 0.5 });   // soft blush plaster, as hers
     outer('x', z1, x0, x1, -1, [[d0, d1, 0, DOOR_H]], lav);              // north, with the door
-    outer('z', x0, z0, z1, 1, [[wz[0], wz[1], 0.85, 2.0]], lav);          // east, with the window
+    outer('z', x0, z0, z1, 1, [[wz[0], wz[1], 0.75, 2.15]], lav);         // east, with the morning window
     outer('z', x1, z0, z1, -1, [], lav);                                 // west
-    outer('x', z0, x0, x1, 1, [], lav);                                  // south
+    outer('x', z0, x0, x1, 1, [[wx[0], wx[1], 0.75, 2.15]], lav);         // south, with the open window
     const rect = (flip) => new THREE.Shape([[x0, z0], [x1, z0], [x1, z1], [x0, z1]].map(([x, z]) => new THREE.Vector2(x, flip ? -z : z)));
     const nf = add(new THREE.ShapeGeometry(rect(true)), mat(0xffffff, plankTex, { roughness: 0.55, bumpMap: plankTex, bumpScale: 0.4 }), 0, 0, 0);
     nf.rotation.x = -Math.PI / 2; nf.castShadow = false;
@@ -2018,76 +2019,6 @@ export function buildScene(scene, renderer) {
     // the door, hung on its west side, swinging in; it starts shut
     doorTrim('x', z1, NAT_DOOR);
     door(doorLeaf(d1 - 0.02, z1 - 0.03, d1 - d0 - 0.02, Math.PI), Math.PI, Math.PI / 2 + 0.12, false);
-    // the east window: the view outside through it, a white frame and a sill
-    const wp0 = new THREE.Mesh(new THREE.PlaneGeometry(wz[1] - wz[0], 1.15), portalMat);
-    wp0.position.set(x0 - 0.02, 0.85 + 0.575, czn); wp0.rotation.y = Math.PI / 2; wp0.renderOrder = -2;
-    root.add(wp0); hideFromAO.push(wp0);
-    const wf = paint(P.white);
-    for (const z of wz) box(0.08, 1.21, 0.06, wf, x0 + 0.02, 0.85 + 0.575, z);
-    for (const y of [0.85, 2.0]) box(0.08, 0.06, wz[1] - wz[0] + 0.06, wf, x0 + 0.02, y, czn);
-    box(0.05, 1.15, 0.035, wf, x0 + 0.02, 1.425, czn); box(0.05, 0.035, wz[1] - wz[0], wf, x0 + 0.02, 1.5, czn);
-    box(0.2, 0.04, wz[1] - wz[0] + 0.2, wf, x0 + 0.1, 0.83, czn);
-    // a starry night-sky print, for the duvet, the rug and the pictures
-    const starTex = (bg, star, n, rep = 1) => tex(256, 256, (g, s) => {
-      g.fillStyle = bg; g.fillRect(0, 0, s, s);
-      for (let i = 0; i < n; i++) {
-        const x = rand() * s, y = rand() * s, r = 5 + rand() * 7;
-        g.fillStyle = i % 5 ? star : '#fff6c8';
-        g.beginPath();
-        for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 - Math.PI / 2, rr = k % 2 ? r * 0.45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
-        g.fill();
-      }
-      g.fillStyle = '#fff6c8'; g.beginPath(); g.arc(s * 0.7, s * 0.3, 22, 0, Math.PI * 2); g.fill();     // a moon
-      g.fillStyle = bg; g.beginPath(); g.arc(s * 0.7 + 10, s * 0.3 - 6, 19, 0, Math.PI * 2); g.fill();
-    }, rep, rep);
-    // the bed, its head against the south wall in the west corner
-    {
-      const bx = 8.25, L = 1.9, Wd = 1.0, g = group(bx, 0, z0 + 0.03, 0), mt = 0.5;
-      const hb = new THREE.Shape(); hb.moveTo(-0.55, 0); hb.lineTo(0.55, 0); hb.lineTo(0.55, 0.75); hb.bezierCurveTo(0.55, 1.1, -0.55, 1.1, -0.55, 0.75); hb.closePath();
-      add(new THREE.ExtrudeGeometry(hb, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 3, curveSegments: 20 }), velvet(0xc9b2f0), 0, 0.03, 0, g);
-      soft(Wd + 0.06, 0.24, L, 0.04, paint(P.white), 0, 0.2, L / 2 + 0.05, g);
-      slab(Wd, 0.18, L - 0.04, 0.05, [cream, cream], 0, 0.32, L / 2 + 0.05, g);
-      add(pillowGeo(Wd + 0.06, L * 0.66, 0.11), mat(0xffffff, starTex('#b9a3ec', '#ffffff', 30, 2)), 0, mt + 0.04, L - L * 0.33, g);
-      const pg = pickable(group(0, mt + 0.07, 0.3, 0, g), 'pillow');
-      add(pillowGeo(0.62, 0.38, 0.15), mat(0xffffff, dotsTex('#ffffff', '#cdb8f4', 2)), 0, 0, 0, pg).rotation.x = 0.12;
-      // a teddy bear sitting on the pillow end
-      const ted = pickable(group(0.28, mt + 0.05, 0.62, Math.PI, g), 'teddy bear'), fur = mat(0xc9925e, null, { roughness: 0.9 }), muzzle = mat(0xf3dcc0);
-      ball(0.075, fur, 0, 0.08, 0, ted, 1, 1.1, 0.9);
-      ball(0.06, fur, 0, 0.2, 0, ted);
-      for (const s of [-1, 1]) { ball(0.022, fur, s * 0.045, 0.255, 0, ted); ball(0.028, fur, s * 0.07, 0.04, 0.04, ted); ball(0.025, fur, s * 0.075, 0.12, 0.02, ted); ball(0.007, mat(0x2a1c1a), s * 0.02, 0.215, 0.052, ted); }
-      ball(0.025, muzzle, 0, 0.19, 0.05, ted, 1, 0.8, 0.8); ball(0.008, mat(0x2a1c1a), 0, 0.2, 0.07, ted);
-      add(new THREE.TorusGeometry(0.035, 0.008, 6, 16), mat(0xb48cf0), 0, 0.15, 0.03, ted).rotation.x = Math.PI / 2.4;   // a ribbon
-    }
-    // the bedside table and its lamp, a desk and chair under the window, the wardrobe
-    drawers(0.42, 0.5, 0.38, 2, 1, 7.4, z0 + 0.22, 0, paint(P.white), paint(0xcdb8f4));
-    tableLamp(7.4, 0.5, z0 + 0.22, 1.0, 'lamp');
-    {
-      const dk = group(x0 + 0.33, 0, czn, Math.PI / 2);
-      soft(1.0, 0.035, 0.55, 0.012, paint(P.white), 0, 0.72, 0, dk);
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) cyl(0.022, 0.016, 0.7, paint(P.white), sx * 0.44, 0.35, sz * 0.22, dk);
-      // crayons in a cup, a sketchbook and a little globe
-      cyl(0.035, 0.03, 0.09, paint(0xcdb8f4), 0.32, 0.785, -0.05, dk);
-      [0xff6b8a, 0x6bb8ff, 0xffd84d, 0x7ad37a, 0xb48cf0].forEach((c, i) => { const cr = cyl(0.006, 0.006, 0.11, paint(c), 0.32 + Math.cos(i * 1.3) * 0.015, 0.83, -0.05 + Math.sin(i * 1.3) * 0.015, dk); cr.rotation.z = 0.15 * Math.cos(i); });
-      soft(0.3, 0.012, 0.22, 0.004, paint(0xfff1c8), -0.1, 0.745, 0.02, dk);
-      cyl(0.01, 0.04, 0.03, gold, -0.35, 0.755, -0.12, dk); ball(0.075, mat(0x7cc4e8), -0.35, 0.86, -0.12, dk);
-      pickable(chair(x0 + 0.75, czn, -Math.PI / 2, 0xcdb8f4, 0.85), 'chair');
-    }
-    wardrobe(1.0, 1.9, 0.55, 5.35, z0 + 0.3, 0, paint(P.white), paint(0xcdb8f4));
-    // the toy chest by the door, with toys on and around it
-    {
-      const tc = group(x1 - 0.3, 0, z1 - 0.75, -Math.PI / 2);
-      soft(0.7, 0.4, 0.42, 0.03, paint(0xcdb8f4), 0, 0.2, 0, tc);
-      soft(0.74, 0.06, 0.46, 0.025, paint(P.white), 0, 0.42, 0, tc);
-      add(new THREE.ShapeGeometry(heartShape(0.12), 20), paint(0xffffff), 0, 0.22, 0.212, tc);
-      [[0xff9eb5, -0.15], [0x9ed8ff, 0.05], [0xfff0a0, 0.22]].forEach(([c, dx], i) => pickable(group(dx, 0.45 + i * 0.0, 0, 0, tc), 'block') && box(0.08, 0.08, 0.08, paint(c), 0, 0.04, 0, tc.children[tc.children.length - 1]));
-    }
-    // the round rug in the middle
-    {
-      const rug = add(new THREE.CircleGeometry(0.95, 48), mat(0xffffff, starTex('#d9c8f6', '#ffffff', 24, 1.5), { roughness: 1 }), 6.6, 0.008, czn + 0.25);
-      rug.rotation.x = -Math.PI / 2; rug.castShadow = false;
-      const rim = add(new THREE.RingGeometry(0.95, 1.02, 48), paint(0xb9a3ec), 6.6, 0.009, czn + 0.25); rim.rotation.x = -Math.PI / 2; rim.castShadow = false;
-    }
-    // a name banner over the bed, and star pictures
     const nameTex = (bg, fg) => tex(512, 128, (g, w, h) => {
       g.fillStyle = bg; g.fillRect(0, 0, w, h);
       g.fillStyle = fg; g.font = 'bold 76px "Comic Sans MS", "Chalkboard SE", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -2095,21 +2026,189 @@ export function buildScene(scene, renderer) {
       g.fillStyle = '#fff6c8';
       for (const [x, y] of [[40, 40], [470, 90], [60, 100], [455, 30]]) { g.beginPath(); for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 - Math.PI / 2, r = k % 2 ? 6 : 14; g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } g.fill(); }
     });
-    flat(1.0, 0.25, mat(0xffffff, nameTex('#b9a3ec', '#ffffff')), 8.25, 1.55, z0 + 0.006, root);
-    picture(starTex('#2c2a5a', '#fff6c8', 16), 0.4, 0.5, 0.03, paint(P.white), group(5.6, 1.5, z1 - 0.006, Math.PI));
-    picture(starTex('#c9e6ff', '#ffffff', 14), 0.36, 0.36, 0.03, paint(P.white), group(x1 - 0.006, 1.5, czn - 0.6, -Math.PI / 2));
-    // the paper-star lantern, lit, hanging from the middle of the ceiling
-    {
-      const lx = 6.6, lz = czn, shade = shadeMat(0xfff4d8), bulb = bulbMat(), lg = group(lx, H - 0.45, lz);
-      cyl(0.003, 0.003, 0.3, paint(P.white), 0, 0.3, 0, lg);
-      const st = new THREE.Shape(); for (let k = 0; k < 10; k++) { const a = k * Math.PI / 5 + Math.PI / 2, r = k % 2 ? 0.07 : 0.16; k ? st.lineTo(Math.cos(a) * r, Math.sin(a) * r) : st.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
-      add(new THREE.ExtrudeGeometry(st, { depth: 0.1, bevelEnabled: true, bevelSize: 0.02, bevelThickness: 0.03, bevelSegments: 2 }).translate(0, 0, -0.05), shade, 0, 0, 0, lg);
-      ball(0.03, bulb, 0, 0, 0, lg);
-      const l = lamp(lx, H - 0.5, lz, { hit: [0.25, 0.3], shades: [shade], bulb, power: 2.2, distance: 6 });
-      l.proxy.position.y = H - 0.45; l.proxy.scale.set(1, 1, 1);
-      l.switch = switchable(lg, 'star lantern', k => setLamp(l, k > 0.5), LIGHT);
-      setLamp(l, true);
+
+    // Natalie's room, as it is in her own home (room-for-natalie): her bedroom, turned to
+    // fit the cottage. It is built in that home's own coordinates inside a group turned a
+    // quarter: there the east wall is at z = -3 and the south wall at x = 4.2.
+    windowUnit(wz[1] - wz[0], 0.15, x0, (wz[0] + wz[1]) / 2, Math.PI / 2, sheerMap, 0.7, false, [1.3, 1.3], true, 0.75, 2.15);   // east: shut, curtains tied back
+    windowUnit(wx[1] - wx[0], 0.15, (wx[0] + wx[1]) / 2, z0, 0, sheerMap, 0.72, true, [1.4, 1.3], false, 0.75, 2.15);             // south: open, with the breeze
+    const nr = group(7.6, 0, -13.0, Math.PI / 2);
+    nr.updateMatrixWorld(true);
+    const toPlan = (x, y, z) => root.worldToLocal(nr.localToWorld(new THREE.Vector3(x, y, z)));
+    const NW2 = 4.2, ND2 = 3.0, NU = u => -4.2 + u * 8.4, NV = v => -3 + v * 6, NPZ = 1.4;
+    cur = nr;
+    // little hearts and stars on pink, for the duvet; a cream pot with pink waves; the print
+    const duvetTex2 = tex(512, 512, (g, s2) => {
+      g.fillStyle = '#f9cfdb'; g.fillRect(0, 0, s2, s2);
+      const heart = (x, y, k) => { g.save(); g.translate(x, y); g.scale(k, k); g.beginPath(); g.moveTo(0, 8); g.bezierCurveTo(-22, -6, -12, -26, 0, -12); g.bezierCurveTo(12, -26, 22, -6, 0, 8); g.fill(); g.restore(); };
+      const star = (x, y, r) => { g.beginPath(); for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } g.fill(); };
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+        const x = (i + 0.25 + (j % 2) * 0.5) * s2 / 4, y = (j + 0.5) * s2 / 4;
+        g.fillStyle = '#ffffff'; heart(x, y, 1.1);
+        g.fillStyle = '#fff3b8'; star(x + s2 / 8, y + s2 / 9, 9);
+      }
+    }, 2, 2);
+    const wavyTex = tex(256, 128, (g, w, h) => {
+      g.fillStyle = '#fff3ea'; g.fillRect(0, 0, w, h);
+      g.strokeStyle = '#f2a0b5'; g.lineWidth = 7;
+      for (const y of [32, 64, 96]) { g.beginPath(); for (let x = 0; x <= w; x += 4) g.lineTo(x, y + 9 * Math.sin(x / w * Math.PI * 8)); g.stroke(); }
+    });
+    const natPrintTex = tex(512, 666, (g, w, h) => {
+      const bg = g.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, '#d9e8fb'); bg.addColorStop(1, '#fbe3ec');
+      g.fillStyle = bg; g.fillRect(0, 0, w, h);
+      ['#f6b3c4', '#fbd9a4', '#fff0a8', '#bfe6d6', '#c6dcf5', '#d9c8f0'].forEach((c, i) => { g.strokeStyle = c; g.lineWidth = 22; g.beginPath(); g.arc(w / 2, 420, 200 - i * 22, Math.PI, 0); g.stroke(); });
+      g.fillStyle = '#ffffff';
+      for (const [x, y, r] of [[150, 410, 52], [210, 380, 64], [280, 400, 56], [340, 420, 44], [230, 430, 60]]) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = '#fff3b8'; g.beginPath(); g.arc(400, 110, 46, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#d9e8fb'; g.beginPath(); g.arc(420, 96, 42, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#fff8f0';
+      g.beginPath(); g.ellipse(250, 330, 56, 34, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.ellipse(210, 300, 12, 34, -0.5, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.ellipse(232, 294, 12, 34, -0.2, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#3a2a2e'; g.lineWidth = 3; g.beginPath(); g.arc(226, 328, 6, 0, Math.PI); g.stroke();
+      g.fillStyle = '#8a7a9a'; g.font = 'italic 34px Georgia, serif'; g.textAlign = 'center'; g.fillText('sweet dreams', w / 2, 590);
+    });
+    // The toy on the bed, from Natalie's photos: a yellow plush chick about 30 cm tall,
+    // its round head wider than its body, stubby wings, a red three-lobed comb, a pouty
+    // orange beak, brown eyes, pink swirl cheeks, big orange feet and a pink stitched x.
+    function chickToy(x, y, z, rotY) {
+      const g = pickable(group(x, y, z, rotY), 'chick'), plush = [];
+      const yellow = mat(0xf0e35a, null, { roughness: 1 }), orange = mat(0xf59a3a, null, { roughness: 0.9 });
+      const red = mat(0xd9302c, null, { roughness: 0.9 }), brown = mat(0x3a2216, null, { roughness: 0.35 }), stitch = paint(0xe57d9b);
+      const part = (r, m, px, py, pz, sx = 1, sy = 1, sz = 1, fur = true) => {
+        const p = add(new THREE.SphereGeometry(r, 22, 16), m, px, py, pz, g);
+        p.scale.set(sx, sy, sz);
+        if (fur) plush.push(p);
+        return p;
+      };
+      for (const s2 of [-1, 1]) {
+        part(1, orange, s2 * 0.045, 0.022, 0.03, 0.042, 0.024, 0.058);
+        for (const t of [-1, 0, 1]) part(0.016, orange, s2 * 0.045 + t * 0.022, 0.02, 0.083, 1, 0.9, 1);
+      }
+      part(1, yellow, 0, 0.105, 0, 0.085, 0.085, 0.075);
+      for (const s2 of [-1, 1]) { const w = part(1, yellow, s2 * 0.088, 0.125, 0.005, 0.045, 0.02, 0.035); w.rotation.z = -s2 * 0.55; }
+      const HX = 0.115, HY = 0.1, HZ = 0.092, hy = 0.255;
+      part(1, yellow, 0, hy, 0, HX, HY, HZ);
+      for (const i of [-1, 0, 1]) { const c = part(0.024, red, i * 0.026, hy + HY - 0.004 + (i ? 0 : 0.012), -0.008, 0.9, 1.35, 0.8, false); c.rotation.z = -i * 0.45; }
+      const onHead = (px, py, lift) => {
+        const pz = HZ * Math.sqrt(Math.max(0, 1 - (px / HX) ** 2 - (py / HY) ** 2));
+        const n = new THREE.Vector3(px / (HX * HX), py / (HY * HY), pz / (HZ * HZ)).normalize();
+        return [new THREE.Vector3(px, hy + py, pz).addScaledVector(n, lift), n];
+      };
+      const zz = new THREE.Vector3(0, 0, 1);
+      for (const s2 of [-1, 1]) {
+        const [at, n] = onHead(s2 * 0.042, 0.012, 0.008);
+        const eye = part(1, brown, at.x, at.y, at.z, 0.0115, 0.0155, 0.006, false);
+        eye.quaternion.setFromUnitVectors(zz, n);
+        part(0.0035, paint(0xffffff), at.x + s2 * 0.003, at.y + 0.006, at.z + 0.004, 1, 1, 1, false);
+        const [ca, cn] = onHead(s2 * 0.074, -0.03, 0.008);
+        for (const r of [0.015, 0.008]) { const ring = add(new THREE.TorusGeometry(r, 0.0022, 6, 28), stitch, ca.x, ca.y, ca.z, g); ring.quaternion.setFromUnitVectors(zz, cn); }
+      }
+      const [ba] = onHead(0, -0.014, 0.012);
+      part(1, orange, ba.x, ba.y, ba.z, 0.031, 0.015, 0.024, false);
+      part(1, orange, ba.x, ba.y - 0.017, ba.z - 0.004, 0.025, 0.011, 0.018, false);
+      for (const a of [0.8, -0.8]) { const st = box(0.018, 0.003, 0.003, stitch, 0, 0.075, 0.082, g); st.rotation.z = a; }
+      fluff(plush, { length: 0.0065, layers: 10, strand: 0.0017, droop: 0.05, shade: 0.75 });
+      return g;
     }
+    // ---------- a loft bed over a desk, against the east wall ----------
+    {
+      const bx0 = 3.2, bx1 = NW2 - 0.03, bz0 = -ND2 + 0.08, bz1 = -0.93, plat = 1.45;
+      const mx = (bx0 + bx1) / 2, mz = (bz0 + bz1) / 2, frame = paint(P.white);
+      for (const x of [bx0 + 0.03, bx1 - 0.03]) for (const z of [bz0 + 0.03, bz1 - 0.03]) soft(0.06, 2.05, 0.06, 0.012, frame, x, 1.025, z);
+      for (const x of [bx0 + 0.03, bx1 - 0.03]) soft(0.05, 0.12, bz1 - bz0, 0.01, frame, x, plat, mz);
+      for (const z of [bz0 + 0.03, bz1 - 0.03]) soft(bx1 - bx0, 0.12, 0.05, 0.01, frame, mx, plat, z);
+      box(bx1 - bx0 - 0.08, 0.03, bz1 - bz0 - 0.08, oak, mx, plat + 0.05, mz);
+      slab(bx1 - bx0 - 0.1, 0.16, bz1 - bz0 - 0.1, 0.05, [cream, cream], mx, plat + 0.065, mz);
+      const mattTop = plat + 0.225, railY = plat + 0.38;
+      soft(0.04, 0.05, bz1 - bz0 - 0.5, 0.01, frame, bx0 + 0.03, railY, bz0 + (bz1 - bz0 - 0.5) / 2);
+      for (const z of [bz0 + 0.03, bz1 - 0.03]) soft(bx1 - bx0, 0.05, 0.04, 0.01, frame, mx, railY, z);
+      for (let z = bz0 + 0.3; z < bz1 - 0.5; z += 0.3) soft(0.03, railY - plat, 0.03, 0.008, frame, bx0 + 0.03, (railY + plat) / 2, z);
+      const lz0 = bz1 - 0.44, lz1 = bz1 - 0.06, lx = bx0 - 0.03;                       // the ladder
+      for (const z of [lz0, lz1]) soft(0.05, railY, 0.05, 0.01, frame, lx, railY / 2, z);
+      for (let y = 0.3; y < plat; y += 0.3) soft(0.07, 0.04, lz1 - lz0, 0.01, oak, lx, y, (lz0 + lz1) / 2);
+      const duvet = add(pillowGeo(bx1 - bx0 - 0.06, 1.42, 0.13), mat(0xffffff, duvetTex2), mx, mattTop + 0.045, bz1 - 0.06 - 0.71);
+      const pillow = add(pillowGeo(0.62, 0.4, 0.15), mat(0xffffff, dotsTex('#ffffff', '#f7b9c8', 2)), mx, mattTop + 0.06, bz0 + 0.3);
+      fluff([duvet], { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [bx1 - bx0 - 0.06, 1.42] });
+      fluff([pillow], { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [0.62, 0.4] });
+      chickToy(mx - 0.08, mattTop + 0.07, bz0 + 0.66, -Math.PI / 2 + 0.35);
+      const shelfY = 2.22;                                                               // a shelf of books above the bed
+      soft(0.22, 0.03, 0.95, 0.008, paint(P.white), NW2 - 0.11, shelfY, mz);
+      let z = mz - 0.42;
+      for (const [c, h, t] of [[P.pink, 0.21, 0.04], [P.lilac, 0.19, 0.03], [P.mint, 0.23, 0.045], [P.butter, 0.18, 0.03], [P.sky, 0.21, 0.035], [0xf7a8bd, 0.2, 0.04]]) {
+        book(0.16, h, t, c, NW2 - 0.11, shelfY + 0.015, z + t / 2, 0);
+        z += t + 0.005;
+      }
+      add(puffed(heartShape(0.1), 0.03, 0.015), paint(0xf47aa0), NW2 - 0.11, shelfY + 0.065, mz + 0.2).rotation.y = -Math.PI / 2;
+      // the desk underneath: three drawers, a plant in a wavy pot, a pencil cup, a desk lamp plugged into the wall
+      const dx0 = NW2 - 0.6, dz0 = -2.6, dz1 = -1.2, dTop = 0.75, dcx = (dx0 + NW2) / 2, dcz = (dz0 + dz1) / 2;
+      soft(0.6, 0.035, dz1 - dz0, 0.012, paint(P.white), dcx, dTop, dcz);
+      soft(0.56, 0.13, dz1 - dz0 - 0.04, 0.012, paint(P.white), dcx, dTop - 0.085, dcz);
+      for (let i = 0; i < 3; i++) {
+        const zz = dz0 + (i + 0.5) * (dz1 - dz0) / 3;
+        soft(0.02, 0.1, (dz1 - dz0) / 3 - 0.04, 0.008, paint(P.lilac), dx0 - 0.002, dTop - 0.085, zz);
+        ball(0.014, gold, dx0 - 0.02, dTop - 0.085, zz);
+      }
+      for (const x of [dx0 + 0.04, NW2 - 0.04]) for (const zz of [dz0 + 0.04, dz1 - 0.04]) cyl(0.02, 0.016, dTop - 0.02, paint(P.white), x, (dTop - 0.02) / 2, zz);
+      const surface = dTop + 0.018;
+      potPlant(dcx + 0.08, surface, dz0 + 0.2, 0.07, 0.12, mat(0xffffff, wavyTex), 9, 0.2, 0.3);
+      const cup = group(dcx + 0.1, surface, dz0 + 0.55);
+      cyl(0.04, 0.036, 0.1, paint(P.mint), 0, 0.05, 0, cup);
+      [[0xf7a8bd, 0.012, 0.012, 0.15], [0xfbe7a6, -0.012, 0.01, -0.1], [0xc6e2f5, 0, -0.014, 0.05], [0xd9c8f0, 0.016, -0.006, 0.2]].forEach(([c, x, zz, lean]) => {
+        const pc = cyl(0.004, 0.004, 0.17, paint(c), x, 0.11, zz, cup);
+        pc.rotation.set(lean, 0, -lean * 0.6);
+      });
+      const lampMat = paint(0xf7a8bd), deskLamp = group(dcx + 0.12, surface, dz1 - 0.3);
+      cyl(0.06, 0.07, 0.02, lampMat, 0, 0.01, 0, deskLamp);
+      const arm1 = cyl(0.009, 0.009, 0.3, lampMat, -0.05, 0.16, 0, deskLamp); arm1.rotation.z = 0.35;
+      const arm2 = cyl(0.009, 0.009, 0.26, lampMat, -0.17, 0.33, 0, deskLamp); arm2.rotation.z = -1.0;
+      ball(0.016, gold, -0.1, 0.3, 0, deskLamp);
+      const deskShade = shadeMat(0xf7a8bd), deskBulb = bulbMat();
+      const head = add(turn([[0.07, 0], [0.065, 0.02], [0.03, 0.08], [0.016, 0.09]], 32), deskShade, -0.29, 0.36, 0, deskLamp);
+      head.rotation.z = 2.2;
+      ball(0.022, deskBulb, -0.27, 0.33, 0, deskLamp);
+      deskLamp.updateMatrixWorld(true);
+      const glowAt = root.worldToLocal(deskLamp.localToWorld(new THREE.Vector3(-0.27, 0.3, 0)));
+      const dl = lamp(glowAt.x, glowAt.y, glowAt.z, { hit: [0.2, surface + 0.5], shades: [deskShade], bulb: deskBulb, power: 0.5, distance: 2.5 });
+      dl.switch = switchable(deskLamp, 'desk lamp', k => setLamp(dl, k > 0.5), LIGHT);
+      const socketZ = dz1 + 0.12;
+      flat(0.08, 0.08, paint(P.white), 0, 0, 0, group(NW2 - 0.003, 0.35, socketZ, -Math.PI / 2));
+      const path = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(dcx + 0.17, surface + 0.01, dz1 - 0.3), new THREE.Vector3(NW2 - 0.03, surface + 0.01, dz1 - 0.2),
+        new THREE.Vector3(NW2 - 0.02, 0.6, dz1 - 0.02), new THREE.Vector3(NW2 - 0.015, 0.38, socketZ),
+      ]);
+      add(new THREE.TubeGeometry(path, 40, 0.004, 6), paint(0xf7a8bd), 0, 0, 0);
+    }
+    // ---------- the rest of her room ----------
+    {
+      // a standing lamp in the corner, lilac (lit, so the room is not dark at dawn)
+      const g = group(1.45, 0, -ND2 + 0.35);
+      cyl(0.13, 0.15, 0.025, paint(P.white), 0, 0.012, 0, g);
+      cyl(0.015, 0.015, 1.4, gold, 0, 0.72, 0, g);
+      const floorShade = shadeMat(0xd9c8f0), floorBulb = bulbMat();
+      add(new THREE.CylinderGeometry(0.17, 0.22, 0.28, 48, 1, true), floorShade, 0, 1.5, 0, g);
+      ball(0.04, floorBulb, 0, 1.44, 0, g);
+      const at = toPlan(1.45, 1.42, -ND2 + 0.35);
+      const fl = lamp(at.x, 1.42, at.z, { hit: [0.24, 1.66], shades: [floorShade], bulb: floorBulb, power: 1.4 });
+      fl.switch = switchable(g, 'floor lamp', k => setLamp(fl, k > 0.5), LIGHT);
+      setLamp(fl, true);
+      // a plant in a spotty pot, by the bed
+      potPlant(NU(0.845), 0, -ND2 + 0.34, 0.19, 0.34, mat(0xffffff, dotsTex('#ffffff', '#f4a6ba', 4, 2)), 15, 0.6, 0.22);
+      // the print, on the wall by the door
+      picture(natPrintTex, 0.5, 0.65, 0.035, paint(P.pink), group(0.4 - 0.004, 1.55, NV(0.23), Math.PI / 2));
+      // a low dresser against the west wall, a round mirror and a jewellery box on it
+      const dw = NU(0.79) - NU(0.67);
+      drawers(dw, 0.8, 0.45, 2, 2, (NU(0.67) + NU(0.79)) / 2, NPZ - T / 2 - 0.235, Math.PI, paint(P.butter), paint(P.cream));
+      const top = 0.8, mx = (NU(0.67) + NU(0.79)) / 2 + 0.22, mz = NPZ - T / 2 - 0.25;
+      cyl(0.05, 0.06, 0.015, gold, mx, top + 0.008, mz);
+      cyl(0.008, 0.008, 0.12, gold, mx, top + 0.07, mz);
+      add(new THREE.TorusGeometry(0.11, 0.012, 12, 40), gold, mx, top + 0.24, mz);
+      add(new THREE.CircleGeometry(0.105, 40), mat(0xdfe6ee, null, { metalness: 1, roughness: 0.04 }), mx, top + 0.24, mz - 0.003).rotation.y = Math.PI;
+      soft(0.16, 0.08, 0.11, 0.02, paint(0xf7a8bd), mx - 0.45, top + 0.04, mz);
+      add(puffed(heartShape(0.06), 0.01, 0.006), gold, mx - 0.45, top + 0.087, mz).rotation.x = -Math.PI / 2;
+    }
+    cur = root;
     // ---- the outside of the cottage ----
     const EH = H + 0.15, lavSide = yardMat(0xe9ddff, sidingTex);
     const skin = (w, holes, x, z, rotY, local) => {
@@ -2123,7 +2222,7 @@ export function buildScene(scene, renderer) {
       const m = add(geo, lavSide, x, 0, z); m.rotation.y = rotY; m.castShadow = false;
     };
     skin(x1 - x0, [[d0, d1, 0, DOOR_H]], cxn, z1 + 0.004, 0, v => v - cxn);                         // north, facing the meadow
-    skin(z1 - z0, [[wz[0], wz[1], 0.85, 2.0]], x0 - 0.004, czn, -Math.PI / 2, v => v - czn);        // east
+    skin(z1 - z0, [[wz[0], wz[1], 0.75, 2.15]], x0 - 0.004, czn, -Math.PI / 2, v => v - czn);       // east
     skin(z1 - z0, [], x1 + 0.004, czn, Math.PI / 2, v => czn - v);                                   // west
     const trimW = yardMat(0xfdf8f2);
     for (const x of [x0 + 0.06, x1 - 0.06]) box(0.12, EH, 0.03, trimW, x, EH / 2, z1 + 0.02).castShadow = false;

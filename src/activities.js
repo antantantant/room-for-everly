@@ -271,9 +271,10 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     // the main bed
     bedSleep: { title: 'Sleep in the big bed', cost: -1, mood: 'sleepy', *run() { yield* lie(wp(1.45, 0.62, 7.7, PI / 2)); yield* sleep(6); yield* getUp(); } },
     bedSit: { title: 'Sit on the edge of the bed', cost: 0.02, *run() { yield* sit(wp(1.3, 0.62, 8.42, 0)); yield* wait(4, swingLegs); yield* unsit(); } },
-    natSleep: { title: "Nap in Natalie's bed", cost: -1, mood: 'sleepy', *run() { yield* lie(wp(8.25, 0.52, -16.2, 0)); yield* sleep(6); yield* getUp(); } },
-    natBounce: { title: "Bounce on Natalie's bed!", cost: 0.16, mood: 'happy', *run() { yield* onTop(8.25, 0.52, -16.1); yield* bounce(4, 0.52); yield* offTop(); } },
-    natSit: { title: "Sit on Natalie's bed", cost: 0.01, *run() { yield* sit(wp(7.78, 0.52, -15.9, -PI / 2)); yield* wait(4, swingLegs); yield* unsit(); } },
+    // Natalie's room: a loft bed with a ladder at its west end, a desk underneath
+    natLoftSleep: { title: "Climb up and nap in Natalie's loft bed", cost: -1, mood: 'sleepy', *run() { yield* loftUp(); yield* lie(wp(5.55, 1.68, -16.68, PI / 2)); yield* sleep(6); yield* getUp(); yield* loftDown(); } },
+    natLoftSit: { title: 'Sit up in the loft bed', cost: 0.02, mood: 'happy', *run() { yield* loftUp(); yield* sit(wp(5.6, 1.68, -16.35, 0)); yield* wait(4, swingLegs); A.legL = A.legR = 0; seated = false; yield* loftDown(); } },
+    natDraw: { title: "Draw at Natalie's desk", cost: 0.03, mood: 'happy', *run() { yield* walkPlan(5.75, -16.3, PI); yield* wait(4.5, (k, t) => { A.headX = 0.3; A.aRx = -1.3 + Math.sin(t * 9) * 0.12; A.aRs = 0.15 + Math.sin(t * 5) * 0.1; A.aLx = -1.1; }); } },
     bedBounce: { title: 'Bounce on the bed!', cost: 0.16, mood: 'happy', *run() { yield* onTop(1.25, 0.62, 7.7); yield* bounce(4, 0.62); yield* offTop(); } },
     bedHug: { title: 'Hug Melody', cost: 0.02, mood: 'happy', ok: () => plushNear(W(0.75, 0.6, 7.7), 0.8), *run() { const p = plushNear(W(0.75, 0.6, 7.7), 0.8); yield* sit(wp(1.0, 0.62, 8.42, 0)); yield* hug(p, 3.5, true); yield* unsit(); } },
     // sofa and loveseat
@@ -407,6 +408,21 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     yield* wait(2.2, (k, t) => { A.y = 0.01 + k * 1.3; const s = Math.sin(t * 8); A.aLx = -2.6 + s * 0.4; A.aRx = -2.6 - s * 0.4; A.legL = -0.5 + s * 0.4; A.legR = -0.5 - s * 0.4; });
     limbsRest();
     yield* hop(top.x, 1.56, top.z);
+  }
+  // Natalie's loft bed: its ladder is on the north side at the west end
+  function* loftUp() {
+    const foot = W(6.42, 0, -15.75), top = W(6.3, 1.68, -16.55);
+    yield* walk(foot.x, foot.z, PI);
+    yield* wait(2.4, (k, t) => { A.y = 0.01 + k * 1.45; const s = Math.sin(t * 8); A.aLx = -2.6 + s * 0.4; A.aRx = -2.6 - s * 0.4; A.legL = -0.5 + s * 0.4; A.legR = -0.5 - s * 0.4; });
+    limbsRest();
+    yield* hop(top.x, 1.68, top.z);
+  }
+  function* loftDown() {
+    const foot = W(6.42, 0, -15.75), top = W(6.3, 1.68, -16.55);
+    yield* walk(top.x, top.z, 0);
+    yield* hop(foot.x, 1.45, foot.z);
+    yield* wait(2.0, (k, t) => { A.y = 1.45 - k * 1.44; const s = Math.sin(t * 8); A.aLx = -2.6 + s * 0.4; A.aRx = -2.6 - s * 0.4; A.legL = -0.5 + s * 0.4; A.legR = -0.5 - s * 0.4; });
+    limbsRest(); A.y = 0.01;
   }
   function* climbDown() {
     const foot = W(7.98, 0, 11.92), top = W(8.55, 1.56, 11.92);
@@ -654,8 +670,9 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
       { box: box(room.yard.bed[0], room.yard.bed[1], 0, 0.5, room.yard.bed[2], room.yard.bed[3]), acts: ['smellFlowers', 'waterFlowers'] },
       { box: box(room.yard.tree.x - 0.15, room.yard.tree.x + 0.15, 0, 1.4, room.yard.tree.z - 0.15, room.yard.tree.z + 0.15), acts: ['treeShake', 'treeHug'], reach: 0.45 },
       ...(room.yard.natalie ? [
-        { box: box(7.72, 8.78, 0, 0.9, -17.12, -15.22), acts: ['natSleep', 'natBounce', 'natSit'] },
-        { box: box(5.65, 7.55, 0, 0.03, -16.0, -14.1), acts: ['rugDance', 'rugRoll', 'rugTummy'], rug: true },
+        { box: box(6.2, 6.6, 0, 1.8, -16.25, -16.05), acts: ['natLoftSleep', 'natLoftSit'], reach: 0.45 },
+        { box: box(5.0, 6.4, 0.6, 0.8, -17.2, -16.6), acts: ['natDraw'] },
+        { box: box(5.2, 8.4, 0, 0.03, -15.6, -14.0), acts: ['rugDance', 'rugRoll', 'rugTummy'], rug: true },
       ] : []),
       { box: box(room.yard.bounds.x0, room.yard.bounds.x1, 0, 0.03, room.yard.bounds.z0, room.yard.bounds.z1), acts: ['grassClouds', 'cartwheel', 'rugRoll', 'rugHop'], rug: true },
     ] : []),
