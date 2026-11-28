@@ -193,6 +193,139 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
   const mouth = () => parts.head.localToWorld(new THREE.Vector3(0, 0.15, 0.24));
   const handAt = (side = 'R') => (side === 'R' ? parts.armR : parts.armL).localToWorld(new THREE.Vector3(0, -0.21, 0.04));
 
+  // ---------- the knit throw as real cloth ----------
+  // When she waves the blanket, the throw on the big bed becomes a little mass-spring sheet:
+  // Verlet particles on a grid, held near their rest spacing by a few rounds of distance
+  // constraints every step (stretch, shear and bend). Any particle can be pinned, here to her
+  // paws; the rest fall onto the mattress or the floor and are pushed out of her body.
+  function makeCloth(src) {
+    const NU = 26, NV = 8, N = NU * NV;                     // along the throw's length, and across it
+    src.updateMatrixWorld(true);
+    src.geometry.computeBoundingBox();
+    const bb = src.geometry.boundingBox, v = new THREE.Vector3();
+    const rest = new Float32Array(N * 3);
+    for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+      v.set(lerp(bb.min.x, bb.max.x, i / (NU - 1)), bb.max.y - 0.004, lerp(bb.min.z, bb.max.z, j / (NV - 1)));
+      src.localToWorld(v).toArray(rest, (j * NU + i) * 3);
+    }
+    const pos = rest.slice(), prev = rest.slice();
+    const geo = new THREE.PlaneGeometry(1, 1, NU - 1, NV - 1);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const material = src.material.clone(); material.side = THREE.DoubleSide;
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.castShadow = mesh.receiveShadow = true; mesh.frustumCulled = false;
+    scene.add(mesh);
+    // constraints: [a, b, rest length, stiffness]
+    const links = [], id = (i, j) => j * NU + i;
+    const dist = (a, b) => Math.hypot(rest[a * 3] - rest[b * 3], rest[a * 3 + 1] - rest[b * 3 + 1], rest[a * 3 + 2] - rest[b * 3 + 2]);
+    const link = (a, b, k) => links.push([a, b, dist(a, b), k]);
+    for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+      if (i + 1 < NU) link(id(i, j), id(i + 1, j), 1);
+      if (j + 1 < NV) link(id(i, j), id(i, j + 1), 1);
+      if (i + 1 < NU && j + 1 < NV) { link(id(i, j), id(i + 1, j + 1), 0.6); link(id(i + 1, j), id(i, j + 1), 0.6); }
+      if (i + 2 < NU) link(id(i, j), id(i + 2, j), 0.25);
+      if (j + 2 < NV) link(id(i, j), id(i, j + 2), 0.25);
+    }
+    // what it rests on: the mattress (plan box of the bed) and the floor
+    const bed = { x0: W(0.06, 0, 0).x, x1: W(2.22, 0, 0).x, z0: W(0, 0, 6.86).z, z1: W(0, 0, 8.54).z, top: rest[1] - 0.002 };
+    const body = [[0, 0.3, 0, 0.16], [0, 0.66, -0.02, 0.19]];   // her tummy and head, as spheres (x, y, z, r) above her feet
+    const pins = new Map();                                  // particle -> THREE.Vector3 it follows
+    function collide(i) {
+      const k = i * 3, x = pos[k], z = pos[k + 2];
+      const floor = x > bed.x0 && x < bed.x1 && z > bed.z0 && z < bed.z1 ? bed.top : 0.006;
+      if (pos[k + 1] < floor) { pos[k + 1] = floor; prev[k] = lerp(prev[k], x, 0.6); prev[k + 2] = lerp(prev[k + 2], z, 0.6); }   // friction
+      for (const [bx, by, bz, r] of body) {
+        const dx = x - (group.position.x + bx), dy = pos[k + 1] - (group.position.y + by), dz = z - (group.position.z + bz);
+        const d = Math.hypot(dx, dy, dz);
+        if (d < r && d > 1e-6) { const s = r / d; pos[k] = group.position.x + bx + dx * s; pos[k + 1] = group.position.y + by + dy * s; pos[k + 2] = group.position.z + bz + dz * s; }
+      }
+    }
+    let t = 0;
+    function step(dt) {
+      dt = Math.min(dt, 1 / 30); t += dt;
+      const SUB = 4, h = dt / SUB, g = -9.8 * h * h, damp = 0.985;
+      for (let s = 0; s < SUB; s++) {
+        const gust = 0.15 * Math.sin(t * 2.1) * h * h;           // a faint breeze, so it never hangs dead still
+        for (let i = 0; i < N; i++) {
+          if (pins.has(i)) continue;
+          const k = i * 3;
+          for (let c = 0; c < 3; c++) { const p0 = pos[k + c], vel = (p0 - prev[k + c]) * damp; prev[k + c] = p0; pos[k + c] = p0 + vel + (c === 1 ? g : c === 2 ? gust : 0); }
+        }
+        for (const [i, target] of pins) { const k = i * 3; prev[k] = pos[k]; prev[k + 1] = pos[k + 1]; prev[k + 2] = pos[k + 2]; target.toArray(pos, k); }
+        for (let it = 0; it < 8; it++) {
+          for (const [a, b, L, kk] of links) {
+            const ka = a * 3, kb = b * 3;
+            const dx = pos[kb] - pos[ka], dy = pos[kb + 1] - pos[ka + 1], dz = pos[kb + 2] - pos[ka + 2];
+            const d = Math.hypot(dx, dy, dz) || 1e-9, diff = (d - L) / d * kk;
+            const pa = pins.has(a), pb = pins.has(b);
+            if (pa && pb) continue;
+            const wa = pa ? 0 : pb ? 1 : 0.5, wb = pb ? 0 : pa ? 1 : 0.5;
+            pos[ka] += dx * diff * wa; pos[ka + 1] += dy * diff * wa; pos[ka + 2] += dz * diff * wa;
+            pos[kb] -= dx * diff * wb; pos[kb + 1] -= dy * diff * wb; pos[kb + 2] -= dz * diff * wb;
+          }
+          for (let i = 0; i < N; i++) if (!pins.has(i)) collide(i);
+        }
+      }
+      geo.attributes.position.needsUpdate = true;
+      geo.computeVertexNormals();
+    }
+    // the rest particle nearest a world point
+    const nearestTo = p => { let best = 0, bd = Infinity; for (let i = 0; i < N; i++) { const d = Math.hypot(rest[i * 3] - p.x, rest[i * 3 + 1] - p.y, rest[i * 3 + 2] - p.z); if (d < bd) { bd = d; best = i; } } return best; };
+    const restOf = i => new THREE.Vector3().fromArray(rest, i * 3);
+    // ease every particle back to where it lay at the start
+    function settle(k) { for (let i = 0; i < N * 3; i++) { pos[i] = lerp(pos[i], rest[i], k); prev[i] = pos[i]; } geo.attributes.position.needsUpdate = true; geo.computeVertexNormals(); }
+    const dispose = () => { mesh.removeFromParent(); geo.dispose(); material.dispose(); };
+    return { step, pins, nearestTo, restOf, settle, dispose };
+  }
+
+  // She climbs onto the big bed, grabs the near edge of the throw with both paws, stands up
+  // and waves it up and down so it billows, then lays it back down across the foot of the bed.
+  function* waveBlanket() {
+    const src = room.bedThrow;
+    yield* onTop(1.42, 0.62, 7.7);
+    yield* turn(PI / 2);                                     // facing the foot of the bed
+    const base = A.y;
+    const cloth = makeCloth(src);
+    src.visible = false;
+    cleanups.push(() => { cloth.dispose(); src.visible = true; });
+    // each frame: pose her, then read where her paws are now (after the pose, not before: other code
+    // moves her between frames), move the pinned corners there, and step the cloth
+    const tick = (each, after) => (k, t, dt) => { each?.(k, t, dt); applyPose(); group.updateMatrixWorld(true); after?.(k, t, dt); cloth.step(dt); };
+    // the two edge particles in front of her paws
+    const edgeX = group.position.x + 0.26;
+    const grabL = cloth.nearestTo(new THREE.Vector3(edgeX, 0.67, group.position.z + 0.15));
+    const grabR = cloth.nearestTo(new THREE.Vector3(edgeX, 0.67, group.position.z - 0.15));
+    applyPose(); group.updateMatrixWorld(true);
+    const [iL, iR] = handAt('L').z > handAt('R').z ? [grabL, grabR] : [grabR, grabL];
+    // crouch and reach for it (a crouch, not a pitch: pitch turns about the world x axis, so facing the foot it would tip her sideways)
+    yield* blend({ y: base - 0.05, legL: -0.5, legR: -0.5, aLx: -0.75, aRx: -0.75, aLs: 0.08, aRs: 0.08, headX: 0.35 }, 0.5, tick());
+    // take hold: the edge rises into her paws
+    const pL = cloth.restOf(iL), pR = cloth.restOf(iR), a = pL.clone(), b = pR.clone();
+    cloth.pins.set(iL, a); cloth.pins.set(iR, b);
+    yield* wait(0.35, tick(null, k => { a.lerpVectors(pL, handAt('L'), ease(k)); b.lerpVectors(pR, handAt('R'), ease(k)); }));
+    const follow = () => { a.copy(handAt('L')); b.copy(handAt('R')); };
+    // stand up with it, arms high
+    yield* blend({ y: base, legL: 0, legR: 0, aLx: -2.6, aRx: -2.6, headX: -0.15 }, 0.5, tick(null, follow));
+    // wave it! big up-and-down shakes send waves rolling down the blanket
+    yield* wait(5.5, tick((k, t, dt) => {
+      const s = Math.sin(t * 6.2);
+      A.aLx = A.aRx = -2.15 + 0.85 * s; A.aLs = A.aRs = 0.1;
+      A.y = base + 0.03 * Math.max(0, -s); A.legL = A.legR = -0.12 * Math.max(0, -s);
+      A.h = PI / 2 + 0.22 * Math.sin(t * 1.3); A.headX = -0.15 + 0.1 * s;
+      emitEvery(dt, 2.5, 'spark', a.clone().lerp(b, 0.5).add(new THREE.Vector3(0.1, -0.2, 0)), { spread: 0.3, v: [0, 0.2, 0], life: 1, size: 0.05 });
+      if (Math.random() < dt * 0.6) emit('heart', mouth(), { n: 1, v: [0, 0.4, 0], life: 1.2, size: 0.06 });
+    }, follow));
+    // lay it back down where it was
+    yield* blend({ aLx: -0.75, aRx: -0.75, h: PI / 2, y: base - 0.05, legL: -0.5, legR: -0.5, headX: 0.35 }, 0.6, tick(null, follow));
+    const hL = a.clone(), hR = b.clone();
+    yield* wait(0.5, tick(null, k => { a.lerpVectors(hL, pL, ease(k)); b.lerpVectors(hR, pR, ease(k)); }));
+    cloth.pins.clear();
+    yield* wait(0.7, tick());
+    yield* blend({ y: base, legL: 0, legR: 0, aLx: 0, aRx: 0, aLs: SPREAD, aRs: SPREAD, headX: 0 }, 0.4, k => cloth.settle(ease(k)));   // smooth it flat
+    cloth.settle(1);
+    yield* offTop();
+  }
+
   // sparkles, drops, steam, bubbles, hearts and notes: little sprites that drift and fade
   const fx = new THREE.Group();
   scene.add(fx);
@@ -276,6 +409,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
     natLoftSit: { title: 'Sit up in the loft bed', cost: 0.02, mood: 'happy', *run() { yield* loftUp(); yield* sit(wp(10.6, 1.68, -16.55, 0)); yield* wait(4, swingLegs); A.legL = A.legR = 0; seated = false; yield* loftDown(); } },
     natDraw: { title: "Draw at Natalie's desk", cost: 0.03, mood: 'happy', *run() { yield* walkPlan(10.5, -16.45, PI); yield* wait(4.5, (k, t) => { A.headX = 0.3; A.aRx = -1.3 + Math.sin(t * 9) * 0.12; A.aRs = 0.15 + Math.sin(t * 5) * 0.1; A.aLx = -1.1; }); } },
     bedBounce: { title: 'Bounce on the bed!', cost: 0.16, mood: 'happy', *run() { yield* onTop(1.25, 0.62, 7.7); yield* bounce(4, 0.62); yield* offTop(); } },
+    bedBlanket: { title: 'Wave the blanket!', cost: 0.12, mood: 'happy', ok: () => !!room.bedThrow, *run() { yield* waveBlanket(); } },
     bedHug: { title: 'Hug Melody', cost: 0.02, mood: 'happy', ok: () => plushNear(W(0.75, 0.6, 7.7), 0.8), *run() { const p = plushNear(W(0.75, 0.6, 7.7), 0.8); yield* sit(wp(1.0, 0.62, 8.42, 0)); yield* hug(p, 3.5, true); yield* unsit(); } },
     // sofa and loveseat
     sofaSit: { title: 'Sit on the sofa', cost: 0.01, *run() { yield* sit(wp(2.7 + (Math.random() - 0.5) * 0.8, 0.44, 0.6, 0)); yield* wait(4, t => { swingLegs(t * 0.6); A.headZ = Math.sin(t) * 0.08; }); yield* unsit(); } },
@@ -642,7 +776,7 @@ export function createActivities({ room, squirrel, walker, feelings, scene, pipe
   const box = (x0, x1, y0, y1, z0, z1) => new THREE.Box3(W(x0, y0, z0), W(x1, y1, z1));
   const spots = [
     { box: box(8.3, 9.4, 0, 1.9, 10.15, 12.2), acts: ['bunkSleepLow', 'bunkSitLow', 'bunkClimbSleep', 'bunkClimbJump'] },
-    { box: box(0.12, 2.2, 0, 0.9, 6.9, 8.5), acts: ['bedSleep', 'bedSit', 'bedBounce', 'bedHug'] },
+    { box: box(0.12, 2.2, 0, 0.9, 6.9, 8.5), acts: ['bedSleep', 'bedSit', 'bedBounce', 'bedHug', 'bedBlanket'] },
     { box: box(1.7, 3.7, 0, 0.85, 0.04, 0.96), acts: ['sofaSit', 'sofaNap', 'sofaBounce'] },
     { box: box(0.04, 0.92, 0, 0.85, 1.25, 2.75), acts: ['loveSit', 'loveWindow', 'loveNap'] },
     { box: box(2.2, 3.2, 0, 0.5, 1.47, 2.03), acts: ['sip', 'strawberry'] },

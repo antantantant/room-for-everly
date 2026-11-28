@@ -35,7 +35,7 @@ A squirrel in a pink dress, from Everly's front and back drawings, made in the s
   - opens and shuts the doors, windows (the curtains blow when one is open), wardrobes and the pink fridge (with food inside to take out), and switches the lamps and the TV on and off.
 - **R** plays with whatever has a pink **P** bubble over it. Each press picks one of its activities at random, for example:
   - bunk bed: sleep or sit on the lower bunk, or climb the ladder and sleep or jump on the top bunk
-  - big bed: sleep, sit on the edge, bounce, hug Melody · sofas: sit, nap, bounce, look out at the castle
+  - big bed: sleep, sit on the edge, bounce, hug Melody, or wave the knit blanket (it is real cloth: it billows, ripples and settles back on the bed) · sofas: sit, nap, bounce, look out at the castle
   - kitchen: stir the saucepan, boil the kettle, wash hands or a plate, grab a snack or milk from the fridge, eat a cupcake
   - bathroom: brush teeth, wash face, floss, funny faces in the mirrors, use the toilet, wash hands at the little basin, take a shower
   - backyard: swing (or swing really high), bounce, kick or throw the big ball (it bounces and stays where it lands), smell or water the flowers, shake or hug the apple tree, watch the clouds, cartwheels, roll in the grass, bunny hops

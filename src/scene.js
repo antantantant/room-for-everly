@@ -2816,6 +2816,7 @@ export function buildScene(scene, renderer) {
   // 2: the wardrobe on the east wall
   wardrobe(1.1, 2.0, 0.58, 0.31, 6.15, Math.PI / 2, paint(P.white), paint(P.pink));
   // 1: the bed, its padded arch headboard under the window
+  let bedThrow = null;   // the knit throw, which the squirrel can pick up and wave (activities.js)
   {
     const g = group(0, 0, 7.7, Math.PI / 2), L = 2.05, Wd = 1.6, z0 = 0.12, mid = z0 + L / 2;
     const hb = new THREE.Shape();
@@ -2834,7 +2835,7 @@ export function buildScene(scene, renderer) {
       fluff([p], { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [0.66, 0.42], parent: pg });
     }
     fluff([duvet], { length: 0.006, layers: 6, strand: 0.0018, shade: 0.85, uvSize: [Wd, L * 0.66] });
-    soft(Wd + 0.14, 0.03, 0.42, 0.012, mat(0xffffff, knitTex('#fbd3df', '#fde6ee', '#f2b3c6', 6, 2)), 0, mt + 0.115, z0 + L - 0.3, g);   // knit throw across the foot
+    bedThrow = soft(Wd + 0.14, 0.03, 0.42, 0.012, mat(0xffffff, knitTex('#fbd3df', '#fde6ee', '#f2b3c6', 6, 2)), 0, mt + 0.115, z0 + L - 0.3, g);   // knit throw across the foot
     melodyToy(0.05, mt + 0.02, z0 + 0.62, 0, 1.0, g);
   }
   // 3: the bedside table and its lamp
@@ -3478,5 +3479,5 @@ export function buildScene(scene, renderer) {
   renderSunDepth();
   for (const o of outdoorOnly) o.visible = false;
 
-  return { setSkyMood, tickSky, get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); for (const o of outdoorOnly) o.visible = k > 0.5; }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard, inNatalie: v => v.x + CX > NAT.x0 && v.x + CX < NAT.x1 && v.z + CZ > NAT.z0 && v.z + CZ < NAT.z1 };
+  return { setSkyMood, tickSky, get sunPower() { return sun.intensity; }, setOutdoors(k) { outK = k; applyOutdoors(); for (const o of outdoorOnly) o.visible = k > 0.5; }, hideFromAO, volumetric, setSun, setWind, renderSunDepth, lamps, setLamp, interactables, update, plan: { x: CX, z: CZ }, yard, bedThrow, inNatalie: v => v.x + CX > NAT.x0 && v.x + CX < NAT.x1 && v.z + CZ > NAT.z0 && v.z + CZ < NAT.z1 };
 }
